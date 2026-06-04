@@ -105,7 +105,8 @@ function Get-RestoreFileInfoFromName {
 # accurate. Returns @() when the name/zip is not a recognizable backup.
 function Get-ZipRestoreInfos {
     param(
-        [Parameter(Mandatory)] [System.IO.FileInfo] $File
+        [Parameter(Mandatory)] [System.IO.FileInfo] $File,
+        [string] $Type = 'Zip'
     )
 
     $stem = [System.IO.Path]::GetFileNameWithoutExtension($File.Name)   # strip .zip
@@ -144,7 +145,7 @@ function Get-ZipRestoreInfos {
                 SourcePath      = $File.FullName
                 SourceName      = $File.Name
                 Size            = [int64]$entry.Length
-                Type            = 'Zip'
+                Type            = $Type
                 IsZip           = $true
                 EntryName       = $entry.FullName
                 DestinationName = $entry.Name
@@ -170,13 +171,14 @@ function Add-RestoreFileToGroups {
         [Parameter(Mandatory)] [hashtable] $Groups,
         [Parameter(Mandatory)] $Info
     )
-    $key = "{0}|{1}|{2}" -f $Info.Type, $Info.SaveName, $Info.Timestamp
+    $key = "{0}|{1}|{2}|{3}" -f $Info.Type, $Info.SaveName, $Info.Timestamp, $Info.CollisionSuffix
     if (-not $Groups.ContainsKey($key)) {
         $Groups[$key] = [PSCustomObject]@{
-            Type      = $Info.Type
-            SaveName  = $Info.SaveName
-            Timestamp = $Info.Timestamp
-            Files     = @()
+            Type            = $Info.Type
+            SaveName        = $Info.SaveName
+            Timestamp       = $Info.Timestamp
+            CollisionSuffix = $Info.CollisionSuffix
+            Files           = @()
         }
     }
     $Groups[$key].Files = @($Groups[$key].Files + $Info)
@@ -193,13 +195,14 @@ function New-RestorePointFromGroup {
     }
     $isComplete = ($missing.Count -eq 0)
     $status = if ($isComplete) { 'Complete' } elseif ($missing.Count -gt 0) { 'Missing pair' } else { 'Incomplete' }
-    $id = "{0}|{1}|{2}" -f $Group.Type, $Group.SaveName, $Group.Timestamp
+    $id = "{0}|{1}|{2}|{3}" -f $Group.Type, $Group.SaveName, $Group.Timestamp, $Group.CollisionSuffix
 
     return [PSCustomObject]@{
         Id                = $id
         SaveName          = $Group.SaveName
         Timestamp         = $Group.Timestamp
         Type              = $Group.Type
+        CollisionSuffix   = $Group.CollisionSuffix
         Status            = $status
         IsComplete        = $isComplete
         MissingExtensions = $missing
@@ -223,7 +226,8 @@ function Get-RestorePoints {
         $files = @(Get-ChildItem -LiteralPath $loc.Path -File -ErrorAction Stop)
         foreach ($file in $files) {
             if ($file.Name.ToLowerInvariant().EndsWith('.zip')) {
-                foreach ($info in @(Get-ZipRestoreInfos -File $file)) {
+                $zipType = if ($loc.Type -eq 'Milestone') { 'Milestone' } else { 'Zip' }
+                foreach ($info in @(Get-ZipRestoreInfos -File $file -Type $zipType)) {
                     Add-RestoreFileToGroups -Groups $groups -Info $info
                 }
             }
@@ -238,7 +242,7 @@ function Get-RestorePoints {
     $points = foreach ($key in $groups.Keys) {
         New-RestorePointFromGroup -Group $groups[$key]
     }
-    return @($points | Sort-Object Timestamp, SaveName -Descending)
+    return @($points | Sort-Object @{ Expression = 'Timestamp'; Descending = $true }, @{ Expression = 'CollisionSuffix'; Descending = $true }, @{ Expression = 'SaveName'; Descending = $true })
 }
 
 function Test-RestorePointSources {

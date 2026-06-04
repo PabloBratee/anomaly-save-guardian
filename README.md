@@ -14,8 +14,10 @@ Created by GAM33RSFR33AK.
 > **🛡️ Safe by design:** automatic backups only read and copy your original
 > saves. Restores are guided, ask for confirmation, and create a pre-restore
 > safety backup before overwriting matching live save files. The only files the
-> tool ever deletes are old rolling restore points in the backup folder
-> (retention); milestones and pre-restore safety backups are kept separately.
+> tool deletes are old restore points inside the configured backup folders:
+> rolling retention is scoped to the rolling backup folder, and milestone
+> retention is scoped only to the milestone folder. Live savedgames and
+> pre-restore safety backups are never deleted by retention.
 
 ---
 
@@ -24,8 +26,8 @@ Created by GAM33RSFR33AK.
 - 🟢 **Auto-watch** — backs up every save the moment it appears as you play.
 - 🚦 **Clear status at a glance** — *Idle*, *Watching*, *Waiting for backup
   drive*, *Backing up*, or *Needs attention*, with a colour-coded indicator.
-- 🏁 **Milestone snapshots** — permanent, never-deleted backups for hardcore /
-  Invictus runs.
+- 🏁 **Milestone snapshots** — one-click restore points from the newest complete
+  logical save, with the latest 5 kept by default.
 - 🧭 **Guided first run** — a friendly welcome walks new users through setup; no
   JSON editing required.
 - 🧰 **In-app Settings** — grouped, with folder pickers, helper text, validation
@@ -131,12 +133,12 @@ via the shortcut's **Properties → Change Icon**.
     `*.scop` file — that folder is your save folder.
 - **Backup folder** — put it on a **different physical drive** from the game.
   A backup on the same disk won't help if that disk dies.
-- **Keep the defaults** (`.sav .scop .scoc .dds`, keep 10 saves) unless you have
+- **Keep the defaults** (`.sav .scop .scoc .dds`, keep 5) unless you have
   a reason to change them. One logical save is `.scop` + `.scoc` together (a full
   save), plus the optional `.dds` thumbnail.
 - Before anything risky (a tough fight, the Brain Scorcher, a long-run hardcore
-  character), hit **Take Milestone** — it's a permanent snapshot that retention
-  never deletes.
+  character), hit **Take Milestone**. It backs up the newest complete logical
+  save and milestones keep the latest 5 restore points by default.
 
 ---
 
@@ -146,7 +148,7 @@ via the shortcut's **Properties → Change Icon**.
 |---|---|
 | **Start / Stop Watching** | Toggles automatic backups (green = idle, red = watching). |
 | **Backup Now** | Backs up all current saves once, immediately. |
-| **Take Milestone** | Permanent snapshot of all current saves — never auto-deleted. |
+| **Take Milestone** | Creates a milestone from the newest complete save. |
 | **Restore Backup** | Opens a guided restore flow for rolling, milestone, and safe zip restore points. |
 | **Open Folder** | Opens the backup folder in Explorer. |
 | **Settings** | Change folders, file types, retention, delay, zip mode. No JSON editing. |
@@ -181,7 +183,8 @@ Use **Settings** in the app (recommended), or edit
   "milestoneFolderPath": "D:\\STALKER GAMMA Backups\\Milestones",
   "includeExtensions": [".sav", ".scop", ".scoc", ".dds"],
   "backupDelaySeconds": 3,
-  "keepMaxBackupsPerSave": 10,
+  "keepMaxBackupsPerSave": 5,
+  "keepMaxMilestones": 5,
   "enableZipBackup": false,
   "logFilePath": "D:\\STALKER GAMMA Backups\\backup-log.txt"
 }
@@ -191,10 +194,11 @@ Use **Settings** in the app (recommended), or edit
 |---|---|
 | `saveFolderPath` | Your GAMMA/Anomaly `appdata\savedgames` folder (source). |
 | `backupFolderPath` | Where rolling backups are written. |
-| `milestoneFolderPath` | Permanent snapshots — retention **never** deletes these. Optional; defaults to a `Milestones` subfolder of the backup folder. |
+| `milestoneFolderPath` | Milestone restore points are written here. Optional; defaults to a `Milestones` subfolder of the backup folder. Milestone retention deletes old milestone restore points only inside this folder. |
 | `includeExtensions` | File types that make up a save. `.scop` + `.scoc` are a full save; `.dds` is the optional thumbnail. They are grouped by save name. |
 | `backupDelaySeconds` | Settle time after a change before copying, so a save's files are backed up together once they finish writing. |
-| `keepMaxBackupsPerSave` | How many different logical saves to keep. Rolling backups keep the **newest** backup per save name; this caps how many distinct save names are retained. The key name is kept for backward compatibility. Milestones and pre-restore safety backups are kept separately. |
+| `keepMaxBackupsPerSave` | How many rolling logical-save restore points to keep across different save names. Rolling backups also replace the previous backup for the same save name. The key name is kept for backward compatibility. Default: `5`. |
+| `keepMaxMilestones` | How many milestone restore points to keep in the milestone folder. Default: `5`. Existing configs without this key keep working and use `5`. |
 | `enableZipBackup` | `true` = store each complete logical save group as one `.zip`; `false` = plain copy (easiest to restore). |
 | `logFilePath` | Where the log is written. |
 
@@ -210,11 +214,13 @@ Rolling backups are designed to stay clean: for each save name they keep only th
 backup — great for everyday safety, but it is **not** meant to preserve a specific
 older moment forever.
 
-To lock in a point so it survives any number of later deaths and saves, **Take
-Milestone**. Milestones are permanent, timestamped snapshots that live in the
-milestone folder and are **never** replaced or auto-deleted by rolling backups.
-Hit it before anything risky (a tough fight, the Brain Scorcher, a long hardcore
-character).
+To lock in a point without backing up the whole folder, **Take Milestone**.
+Milestone chooses the newest complete logical save in the live savedgames folder:
+`.scop` + `.scoc` are required, and `.dds` is included when present. If the
+newest file belongs to an incomplete save because the game is still writing, the
+app waits briefly and re-scans; if it is still incomplete, it uses the newest
+complete save instead. Milestones live in the milestone folder and keep the
+latest 5 restore points by default.
 
 ---
 
@@ -254,10 +260,11 @@ folder. Safety backups are not touched by retention cleanup.
 
 ### Zip restore
 
-If zip backups exist, **Restore Backup** shows them as `Zip` restore points. Zip
-files are checked first, extracted to a temporary folder, and only then copied
-into the live save folder. Zip entries with folders, `..`, unexpected names, or
-unexpected extensions are blocked to prevent path traversal.
+If zip backups exist, **Restore Backup** shows them as restore points. Rolling
+zips are labeled `Zip`; milestone zips are labeled `Milestone`. Zip files are
+checked first, extracted to a temporary folder, and only then copied into the
+live save folder. Zip entries with folders, `..`, unexpected names, or unexpected
+extensions are blocked to prevent path traversal.
 
 Restoring does **not** modify or delete backup files — they stay exactly where
 they are.
@@ -271,7 +278,7 @@ The engine works without the GUI:
 ```powershell
 .\backup-stalker-gamma-saves.ps1 -BackupNow            # one-time backup
 .\backup-stalker-gamma-saves.ps1 -Watch                # watch continuously (Ctrl+C to stop)
-.\backup-stalker-gamma-saves.ps1 -Milestone            # permanent snapshot
+.\backup-stalker-gamma-saves.ps1 -Milestone            # milestone newest complete save
 .\backup-stalker-gamma-saves.ps1 -BackupNow -DryRun    # preview, touches nothing
 .\backup-stalker-gamma-saves.ps1 -Watch -DryRun        # preview events live
 ```
@@ -279,8 +286,8 @@ The engine works without the GUI:
 Normal rolling backups are named `OriginalSaveName__YYYY-MM-DD_HH-mm.ext`
 (for example, `quicksave__2026-06-04_22-30.scop`) and the newest backup for a
 save name replaces the previous rolling backup for that same save name. Milestone
-snapshots use second-precision names and keep collision suffixes such as
-`__002` when needed, because milestones are permanent.
+snapshots use minute-precision names too. If two milestones land in the same
+minute for the same save, they keep collision suffixes such as `__002`.
 
 ---
 
@@ -295,8 +302,10 @@ snapshots use second-precision names and keep collision suffixes such as
 - Retention keeps the newest *N* grouped rolling restore points total, sorted by
   the timestamp in the filename. A `.scop` + `.scoc` pair, plus optional `.dds`
   thumbnail, counts as one restore point; zip backups are grouped the same way.
-  Milestone and pre-restore safety backup folders are never scanned by rolling
-  retention.
+- Milestone retention keeps the newest *N* grouped milestone restore points,
+  default `5`, and deletes old milestones only inside the configured milestone
+  folder. It never scans live savedgames, rolling backups, pre-restore safety
+  backups, logs, config files, or unrelated folders.
 
 ---
 
@@ -366,10 +375,10 @@ This tool is built to be trustworthy with your saves:
   them into the live save folder. Backup files are never modified or deleted.
 - **Live files are protected before overwrite.** Restore first creates a
   pre-restore safety backup of matching live files. If that fails, restore stops.
-- **Deletions are scoped and conservative.** Retention only deletes old rolling
-  restore points it created, and only those physically inside the backup folder.
-  Milestone snapshots and pre-restore safety backups are never deleted by
-  rolling retention.
+- **Deletions are scoped and conservative.** Rolling retention only deletes old
+  rolling restore points inside the backup folder. Milestone retention only
+  deletes old milestone restore points inside the milestone folder. Pre-restore
+  safety backups are never deleted by retention.
 - **No network, no telemetry, no dependencies.** Everything runs locally with
   built-in Windows components.
 - **Your personal config and logs stay local** and are git-ignored.
@@ -385,6 +394,8 @@ Current public release:
 
 - First public release: **v1.0.0**
 - Release ZIP: `Anomaly-Save-Guardian-v1.0.0.zip`
+- Refreshed v1.0.0 packages keep the same version, package name, tag, and
+  release; only the existing release asset and notes are updated.
 - GitHub Release:
   [Anomaly Save Guardian v1.0.0](https://github.com/PabloBratee/anomaly-save-guardian/releases/tag/v1.0.0)
 - SHA256: see the **Verification** section on the

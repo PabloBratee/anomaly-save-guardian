@@ -67,7 +67,8 @@ function Initialize-TestConfig {
     param(
         [Parameter(Mandatory)] [string] $Root,
         [bool] $Zip = $false,
-        [int] $Keep = 10,
+        [int] $Keep = 5,
+        [int] $KeepMilestones = 5,
         [string[]] $Extensions = @('.scop', '.scoc', '.dds')
     )
     $save = Join-Path $Root 'savedgames'
@@ -81,6 +82,7 @@ function Initialize-TestConfig {
         includeExtensions     = @($Extensions | ForEach-Object { $_.ToLowerInvariant() })
         backupDelaySeconds    = 0
         keepMaxBackupsPerSave = $Keep
+        keepMaxMilestones     = $KeepMilestones
         enableZipBackup       = $Zip
         logFilePath           = Join-Path $Root 'backup-log.txt'
     }
@@ -171,6 +173,20 @@ function New-GroupedZipRestorePoint {
 function Get-BytesHash {
     param([Parameter(Mandatory)] [string] $Path)
     return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash
+}
+
+function Set-LiveSaveTimes {
+    param(
+        [Parameter(Mandatory)] [string] $Folder,
+        [Parameter(Mandatory)] [string] $Name,
+        [Parameter(Mandatory)] [datetime] $When
+    )
+    foreach ($file in @(Get-ChildItem -LiteralPath $Folder -File | Where-Object {
+        [System.IO.Path]::GetFileNameWithoutExtension($_.Name) -eq $Name
+    })) {
+        $file.LastWriteTime = $When
+        $file.LastWriteTimeUtc = $When.ToUniversalTime()
+    }
 }
 
 # Pick a single logical save group out of a Get-LiveSaveGroups result by name.
@@ -365,6 +381,107 @@ try {
         Assert-True ($zips[0].Name -like '*10-05.zip') 'The newest zip should remain after replacement.'
     }
 
+    # -------------------------------------------------------------------------
+    # Milestone behavior (newest complete logical save only, with retention)
+    # -------------------------------------------------------------------------
+    Invoke-Test 'milestone backs up only the newest complete logical save group' {
+        $cfg = Initialize-TestConfig -Root (New-TestRoot)
+        New-LiveSave -Folder $cfg.saveFolderPath -Name 'autosave' -Dds -Content 'old-complete'
+        New-LiveSave -Folder $cfg.saveFolderPath -Name 'quicksave' -Dds -Content 'new-complete'
+        New-LiveSave -Folder $cfg.saveFolderPath -Name 'manual' -NoScoc -Content 'newest-incomplete'
+        Set-LiveSaveTimes -Folder $cfg.saveFolderPath -Name 'autosave'  -When ([datetime]'2026-06-04T12:00:00')
+        Set-LiveSaveTimes -Folder $cfg.saveFolderPath -Name 'quicksave' -When ([datetime]'2026-06-04T12:05:00')
+        Set-LiveSaveTimes -Folder $cfg.saveFolderPath -Name 'manual'    -When ([datetime]'2026-06-04T12:10:00')
+
+        Use-FixedNow -When ([datetime]'2026-06-04T12:15:10') -Body { Invoke-MilestoneBackup }
+
+        $files = @(Get-ChildItem -LiteralPath $cfg.milestoneFolderPath -File)
+        Assert-Equal 3 $files.Count 'Milestone should contain only the newest complete .scop + .scoc + optional .dds group.'
+        Assert-Equal 3 @($files | Where-Object { $_.Name -like 'quicksave__2026-06-04_12-15*' }).Count 'Newest complete quicksave group was not milestone-backed up.'
+        Assert-Equal 0 @($files | Where-Object { $_.Name -like 'autosave__*' }).Count 'Older complete autosave should not be included in this milestone.'
+        Assert-Equal 0 @($files | Where-Object { $_.Name -like 'manual__*' }).Count 'Incomplete newest manual save should not be included.'
+    }
+
+    Invoke-Test 'milestone filenames use minute precision with collision suffix when needed' {
+        $cfg = Initialize-TestConfig -Root (New-TestRoot)
+        New-LiveSave -Folder $cfg.saveFolderPath -Name 'quicksave'
+
+        Use-FixedNow -When ([datetime]'2026-06-04T12:15:10') -Body { Invoke-MilestoneBackup }
+        Set-Content -LiteralPath (Join-Path $cfg.saveFolderPath 'quicksave.scop') -Value 'changed-scop' -Encoding ASCII
+        Set-Content -LiteralPath (Join-Path $cfg.saveFolderPath 'quicksave.scoc') -Value 'changed-scoc' -Encoding ASCII
+        Use-FixedNow -When ([datetime]'2026-06-04T12:15:50') -Body { Invoke-MilestoneBackup }
+
+        $files = @(Get-ChildItem -LiteralPath $cfg.milestoneFolderPath -File)
+        Assert-Equal 4 $files.Count 'Two pair-only milestones in the same minute should keep two complete groups.'
+        Assert-Equal 2 @($files | Where-Object { $_.Name -match '^quicksave__2026-06-04_12-15\.(scop|scoc)$' }).Count 'First milestone should use minute precision without seconds.'
+        Assert-Equal 2 @($files | Where-Object { $_.Name -match '^quicksave__2026-06-04_12-15__002\.(scop|scoc)$' }).Count 'Second same-minute milestone should use a shared __002 suffix.'
+    }
+
+    Invoke-Test 'missing .dds does not block milestone backup' {
+        $cfg = Initialize-TestConfig -Root (New-TestRoot)
+        New-LiveSave -Folder $cfg.saveFolderPath -Name 'autosave'
+
+        Invoke-MilestoneBackup
+
+        $files = @(Get-ChildItem -LiteralPath $cfg.milestoneFolderPath -File)
+        Assert-Equal 2 $files.Count 'A .scop + .scoc pair without .dds should still create a milestone.'
+        Assert-Equal 2 @($files | Where-Object { $_.Name -like 'autosave__*' }).Count 'Milestone should include the pair-only save.'
+    }
+
+    Invoke-Test 'milestone zip mode creates one zip containing the newest complete save group' {
+        $cfg = Initialize-TestConfig -Root (New-TestRoot) -Zip $true
+        New-LiveSave -Folder $cfg.saveFolderPath -Name 'autosave' -Dds -Content 'old-complete'
+        New-LiveSave -Folder $cfg.saveFolderPath -Name 'quicksave' -Dds -Content 'new-complete'
+        Set-LiveSaveTimes -Folder $cfg.saveFolderPath -Name 'autosave'  -When ([datetime]'2026-06-04T12:00:00')
+        Set-LiveSaveTimes -Folder $cfg.saveFolderPath -Name 'quicksave' -When ([datetime]'2026-06-04T12:05:00')
+
+        Use-FixedNow -When ([datetime]'2026-06-04T12:15:10') -Body { Invoke-MilestoneBackup }
+
+        $zips = @(Get-ChildItem -LiteralPath $cfg.milestoneFolderPath -File)
+        Assert-Equal 1 $zips.Count 'Zip milestone should create one zip for one logical save group.'
+        Assert-True ($zips[0].Name -eq 'quicksave__2026-06-04_12-15.zip') "Unexpected milestone zip name: $($zips[0].Name)"
+        Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
+        $zip = [System.IO.Compression.ZipFile]::OpenRead($zips[0].FullName)
+        try {
+            $entries = @($zip.Entries | ForEach-Object { $_.FullName } | Sort-Object)
+            Assert-Equal 3 $entries.Count 'Milestone zip should contain the complete save group.'
+            Assert-True ($entries -contains 'quicksave.scop') 'Milestone zip is missing quicksave.scop.'
+            Assert-True ($entries -contains 'quicksave.scoc') 'Milestone zip is missing quicksave.scoc.'
+            Assert-True ($entries -contains 'quicksave.dds') 'Milestone zip is missing quicksave.dds.'
+        }
+        finally {
+            $zip.Dispose()
+        }
+    }
+
+    Invoke-Test 'milestone retention keeps newest 5 restore points by default and stays scoped to milestone folder' {
+        $cfg = Initialize-TestConfig -Root (New-TestRoot)
+        New-LiveSave -Folder $cfg.saveFolderPath -Name 'quicksave'
+        $liveHash = Get-BytesHash (Join-Path $cfg.saveFolderPath 'quicksave.scop')
+        New-RollingRestorePoint -Folder $cfg.backupFolderPath -SaveName 'rolling' -Timestamp '2026-06-04_00-00'
+        $safetyRoot = Join-Path $cfg.backupFolderPath 'PreRestoreSafetyBackups'
+        New-Item -ItemType Directory -Path $safetyRoot -Force | Out-Null
+        New-RollingRestorePoint -Folder $safetyRoot -SaveName 'safety' -Timestamp '2026-06-04_00-00'
+
+        for ($i = 0; $i -lt 6; $i++) {
+            Set-Content -LiteralPath (Join-Path $cfg.saveFolderPath 'quicksave.scop') -Value "scope-$i" -Encoding ASCII
+            Set-Content -LiteralPath (Join-Path $cfg.saveFolderPath 'quicksave.scoc') -Value "scoc-$i" -Encoding ASCII
+            $when = ([datetime]'2026-06-04T13:00:00').AddMinutes($i)
+            Use-FixedNow -When $when -Body { Invoke-MilestoneBackup }
+        }
+
+        $milestones = @(Get-ChildItem -LiteralPath $cfg.milestoneFolderPath -File)
+        Assert-Equal 10 $milestones.Count 'Default milestone retention should keep 5 pair restore points (10 files).'
+        Assert-Equal 0 @($milestones | Where-Object { $_.Name -like 'quicksave__2026-06-04_13-00*' }).Count 'Oldest milestone restore point should be pruned.'
+        Assert-Equal 2 @(Get-ChildItem -LiteralPath $cfg.backupFolderPath -File | Where-Object { $_.Name -like 'rolling__*' }).Count 'Milestone retention should not delete rolling backups.'
+        Assert-Equal 2 @(Get-ChildItem -LiteralPath $safetyRoot -File | Where-Object { $_.Name -like 'safety__*' }).Count 'Milestone retention should not delete pre-restore safety backups.'
+        Assert-True (Test-Path -LiteralPath (Join-Path $cfg.saveFolderPath 'quicksave.scop')) 'Milestone retention should not delete live saves.'
+        Assert-True (Test-Path -LiteralPath (Join-Path $cfg.saveFolderPath 'quicksave.scoc')) 'Milestone retention should not delete live saves.'
+        Assert-True ($liveHash -ne (Get-BytesHash (Join-Path $cfg.saveFolderPath 'quicksave.scop'))) 'Test setup should have changed the live file before checking it still exists.'
+        Assert-Equal 'scope-5' ((Get-Content -LiteralPath (Join-Path $cfg.saveFolderPath 'quicksave.scop') -Raw).Trim()) 'Milestone retention should not modify live saves.'
+        Assert-Equal 'scoc-5' ((Get-Content -LiteralPath (Join-Path $cfg.saveFolderPath 'quicksave.scoc') -Raw).Trim()) 'Milestone retention should not modify live saves.'
+    }
+
     Invoke-Test 'include extensions are respected' {
         $cfg = Initialize-TestConfig -Root (New-TestRoot) -Extensions @('.scop')
         New-FakeSave -Folder $cfg.saveFolderPath -Name 'included.scop' -Content 'save' | Out-Null
@@ -495,15 +612,17 @@ try {
 
         Assert-True (Test-Path -LiteralPath $config) 'Expected missing personal config to be copied from example.'
         $cfg = Import-BackupConfig -ConfigPath $config
-        Assert-Equal 10 $cfg.keepMaxBackupsPerSave 'Fresh config should default to keeping 10 logical saves.'
+        Assert-Equal 5 $cfg.keepMaxBackupsPerSave 'Fresh config should default to keeping 5 logical saves.'
+        Assert-Equal 5 $cfg.keepMaxMilestones 'Fresh config should default to keeping 5 milestone restore points.'
     }
 
-    Invoke-Test 'example config default keeps ten logical saves' {
+    Invoke-Test 'example config default keeps five logical saves and five milestones' {
         $cfg = Import-BackupConfig -ConfigPath $exampleConfigPath
-        Assert-Equal 10 $cfg.keepMaxBackupsPerSave 'Example config should default to keeping 10 logical saves.'
+        Assert-Equal 5 $cfg.keepMaxBackupsPerSave 'Example config should default to keeping 5 logical saves.'
+        Assert-Equal 5 $cfg.keepMaxMilestones 'Example config should default to keeping 5 milestone restore points.'
     }
 
-    Invoke-Test 'untouched old default config is treated as ten saves' {
+    Invoke-Test 'untouched old default config is treated as five saves and five milestones' {
         $root = New-TestRoot
         $config = Join-Path $root 'stalker-gamma-backup-config.json'
         Set-Content -LiteralPath $config -Encoding ASCII -Value @'
@@ -520,7 +639,8 @@ try {
 '@
 
         $cfg = Import-BackupConfig -ConfigPath $config
-        Assert-Equal 10 $cfg.keepMaxBackupsPerSave 'Untouched old default config should be treated as 10 logical saves.'
+        Assert-Equal 5 $cfg.keepMaxBackupsPerSave 'Untouched old default config should be treated as 5 logical saves.'
+        Assert-Equal 5 $cfg.keepMaxMilestones 'Untouched old default config should default milestone retention to 5.'
     }
 
     Invoke-Test 'customized existing config keeps explicit retention value' {
@@ -541,6 +661,7 @@ try {
 
         $cfg = Import-BackupConfig -ConfigPath $config
         Assert-Equal 200 $cfg.keepMaxBackupsPerSave 'Customized existing config should keep an explicit retention value.'
+        Assert-Equal 5 $cfg.keepMaxMilestones 'Customized existing config without milestone retention should default milestones to 5.'
     }
 
     # -------------------------------------------------------------------------

@@ -5,6 +5,27 @@ All notable changes to this project are documented here. This project follows
 
 ## [1.0.0] - 2026-06-04
 
+### Refreshed v1.0.0 package
+- **Milestone snapshots now back up only the newest complete logical save** from
+  the live savedgames folder instead of every save in the folder.
+- Milestones use the same logical-save grouping as rolling backups:
+  `.scop` + `.scoc` are required, and optional `.dds` thumbnails are included
+  when present.
+- If the newest live save group is incomplete because the game is still writing,
+  milestone waits briefly and re-scans; if it remains incomplete, milestone uses
+  the newest complete group instead.
+- **Milestone retention now keeps the latest 5 milestone restore points by
+  default** and deletes older milestone restore points only inside the configured
+  milestone folder.
+- **Default retention changed to 5** for rolling backups and milestones. Existing
+  configs without the new `keepMaxMilestones` key keep working and use `5`.
+- Zip mode now applies to milestones the same way it applies to rolling backups:
+  one complete logical save group per `.zip`.
+- Milestone filenames now use minute precision (`yyyy-MM-dd_HH-mm`), with a
+  shared `__002` collision suffix when needed.
+- Version, tag and release remain `v1.0.0`; the package remains
+  `Anomaly-Save-Guardian-v1.0.0.zip`.
+
 First public release of Anomaly Save Guardian. A polished, dependency-free
 Windows PowerShell / .NET WinForms app for automatically backing up and safely
 restoring S.T.A.L.K.E.R. Anomaly / GAMMA save files.
@@ -51,8 +72,8 @@ your existing `stalker-gamma-backup-config.json` keeps working.
   extensions, retention, delay and zip mode without editing JSON.
 - **System tray** support: minimise or close (X) to tray, double-click to
   restore, right-click menu, and a true Exit.
-- **Milestone snapshots** that are never removed by retention - ideal for
-  hardcore / Invictus runs.
+- **Milestone snapshots** for manually saving a restore point before risky
+  moments in hardcore / Invictus runs.
 - **Logical save grouping**: `.scop` + `.scoc` are treated as the required save
   pair, with optional `.dds` thumbnails grouped into the same restore point.
 - Rolling backups use minute-precision names (`name__YYYY-MM-DD_HH-mm.ext`) and
@@ -65,19 +86,19 @@ your existing `stalker-gamma-backup-config.json` keeps working.
   empty-state hint.
 - **Redesigned Settings dialog**: grouped into *Folders*, *Backup behavior* and
   *Advanced & logging*, with helper text under each field and consistent Browse
-  buttons. Explains that milestones are permanent and the zip trade-off.
+  buttons. Explains milestone retention and the zip trade-off.
 - Long folder paths now truncate cleanly with the full path in a tooltip, so the
   layout never breaks.
 - Settings now clears the in-memory backup cache after a save, so changed paths
   take effect immediately.
 - Rolling backups now replace the previous backup for the same logical save name
   instead of accumulating endless timestamped copies of the same quicksave,
-  autosave, sleep save, or manual save. The default cap is 10 distinct logical
+  autosave, sleep save, or manual save. The default cap is 5 distinct logical
   saves; milestones and pre-restore safety backups are kept separately.
 - Zip mode now stores one complete logical save group per `.zip`, with `.scop`,
   `.scoc` and optional `.dds` together.
-- Milestone snapshots that land in the same second keep `__002`-style collision
-  suffixes instead of overwriting an existing permanent snapshot.
+- Milestone snapshots that land in the same minute keep `__002`-style collision
+  suffixes instead of overwriting an existing milestone.
 - Expanded README with *Recommended setup*, *Troubleshooting*, *Safety* and
   *Releases* sections; refreshed screenshot.
 - `&` now renders literally in labels and headers (no accidental mnemonics).

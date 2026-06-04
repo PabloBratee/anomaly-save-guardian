@@ -21,9 +21,8 @@
     Runs until you close the terminal or press Ctrl+C.
 
 .PARAMETER Milestone
-    Take a PERMANENT snapshot of all current save files into the milestone
-    folder. Milestone backups are NEVER deleted by retention cleanup - use this
-    to lock in an "I'm alive here" point before something risky.
+    Take a milestone restore point from the newest complete logical save group.
+    Milestones are retained in the milestone folder according to config.
 
 .PARAMETER DryRun
     Show what would happen without copying, zipping, or deleting anything.
@@ -183,6 +182,13 @@ function Import-BackupConfig {
         throw "Config 'keepMaxBackupsPerSave' must be a whole number >= 1."
     }
 
+    $keepMilestones = 5
+    if ($present -contains 'keepMaxMilestones') {
+        if (-not [int]::TryParse([string]$cfg.keepMaxMilestones, [ref]$keepMilestones) -or $keepMilestones -lt 1) {
+            throw "Config 'keepMaxMilestones' must be a whole number >= 1."
+        }
+    }
+
     if ($cfg.enableZipBackup -isnot [bool]) {
         throw "Config 'enableZipBackup' must be true or false."
     }
@@ -196,7 +202,8 @@ function Import-BackupConfig {
     $normExt = @($normExt | Where-Object { $_ })
 
     # milestoneFolderPath is optional. If omitted, default to a 'Milestones'
-    # subfolder inside the backup folder. Retention never touches this folder.
+    # subfolder inside the backup folder. Milestone retention is scoped only to
+    # this folder.
     $milestone = $null
     if (($present -contains 'milestoneFolderPath') -and -not [string]::IsNullOrWhiteSpace($cfg.milestoneFolderPath)) {
         $milestone = [string]$cfg.milestoneFolderPath
@@ -206,7 +213,7 @@ function Import-BackupConfig {
     }
 
     $looksLikeOldUntouchedDefault =
-        $keep -eq 200 -and
+        ($keep -eq 200 -or $keep -eq 10) -and
         ([string]$cfg.saveFolderPath -ieq 'C:\Anomaly\appdata\savedgames') -and
         ([string]$cfg.backupFolderPath -ieq 'D:\STALKER GAMMA Backups') -and
         ([string]$milestone -ieq 'D:\STALKER GAMMA Backups\Milestones') -and
@@ -215,7 +222,10 @@ function Import-BackupConfig {
         ([bool]$cfg.enableZipBackup) -eq $false -and
         ([string]$cfg.logFilePath -ieq 'D:\STALKER GAMMA Backups\backup-log.txt')
     if ($looksLikeOldUntouchedDefault) {
-        $keep = 10
+        $keep = 5
+        if (($present -notcontains 'keepMaxMilestones') -or $keepMilestones -eq 10 -or $keepMilestones -eq 200) {
+            $keepMilestones = 5
+        }
     }
 
     # Return a clean, typed object.
@@ -226,6 +236,7 @@ function Import-BackupConfig {
         includeExtensions     = $normExt
         backupDelaySeconds    = $delay
         keepMaxBackupsPerSave = $keep
+        keepMaxMilestones     = $keepMilestones
         enableZipBackup       = [bool]$cfg.enableZipBackup
         logFilePath           = [string]$cfg.logFilePath
     }
@@ -238,6 +249,10 @@ function Save-BackupConfig {
         [Parameter(Mandatory)] $Config,
         [Parameter(Mandatory)] [string] $Path
     )
+    $keepMilestones = 5
+    if ($Config.PSObject.Properties.Name -contains 'keepMaxMilestones') {
+        $keepMilestones = [int]$Config.keepMaxMilestones
+    }
     $ordered = [ordered]@{
         saveFolderPath        = [string]$Config.saveFolderPath
         backupFolderPath      = [string]$Config.backupFolderPath
@@ -245,6 +260,7 @@ function Save-BackupConfig {
         includeExtensions     = @($Config.includeExtensions)
         backupDelaySeconds    = $Config.backupDelaySeconds
         keepMaxBackupsPerSave = [int]$Config.keepMaxBackupsPerSave
+        keepMaxMilestones     = $keepMilestones
         enableZipBackup       = [bool]$Config.enableZipBackup
         logFilePath           = [string]$Config.logFilePath
     }
@@ -419,6 +435,33 @@ function Test-SaveGroupComplete {
         if ($exts -notcontains $required) { return $false }
     }
     return $true
+}
+
+function Get-SaveGroupNewestWriteUtc {
+    param([Parameter(Mandatory)] [System.IO.FileInfo[]] $Files)
+    if (@($Files).Count -eq 0) { return [datetime]::MinValue }
+    $newest = @($Files | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1)
+    if ($newest.Count -eq 0) { return [datetime]::MinValue }
+    return $newest[0].LastWriteTimeUtc
+}
+
+function Get-NewestCompleteLiveSaveGroup {
+    param([Parameter(Mandatory)] [string] $Folder)
+
+    $groups = @(Get-LiveSaveGroups -Folder $Folder)
+    foreach ($group in $groups) {
+        Add-Member -InputObject $group -NotePropertyName NewestWriteUtc -NotePropertyValue (Get-SaveGroupNewestWriteUtc -Files @($group.Files)) -Force
+    }
+
+    $ordered = @($groups | Sort-Object @{ Expression = 'NewestWriteUtc'; Descending = $true }, @{ Expression = 'SaveName'; Descending = $true })
+    $complete = @($ordered | Where-Object { $_.IsComplete })
+
+    return [PSCustomObject]@{
+        Groups       = $ordered
+        Newest       = if ($ordered.Count -gt 0) { $ordered[0] } else { $null }
+        Complete     = if ($complete.Count -gt 0) { $complete[0] } else { $null }
+        CompleteList = $complete
+    }
 }
 
 # A stable fingerprint of a save group (sorted name|ticks|length per file) used to
@@ -606,13 +649,14 @@ function Get-RollingBackupRestorePoints {
         if ($null -eq $info) { continue }
 
         $type = if ($info.IsZip) { 'Zip' } else { 'Rolling' }
-        $key = "{0}|{1}|{2}" -f $type, $info.SaveName, $info.Timestamp
+        $key = "{0}|{1}|{2}|{3}" -f $type, $info.SaveName, $info.Timestamp, $info.CollisionSuffix
         if (-not $groups.ContainsKey($key)) {
             $groups[$key] = [PSCustomObject]@{
-                Type      = $type
-                SaveName  = $info.SaveName
-                Timestamp = $info.Timestamp
-                Files     = @()
+                Type            = $type
+                SaveName        = $info.SaveName
+                Timestamp       = $info.Timestamp
+                CollisionSuffix = $info.CollisionSuffix
+                Files           = @()
             }
         }
         $groups[$key].Files = @($groups[$key].Files + $info)
@@ -621,14 +665,15 @@ function Get-RollingBackupRestorePoints {
     $points = foreach ($key in $groups.Keys) {
         $group = $groups[$key]
         [PSCustomObject]@{
-            Type      = $group.Type
-            SaveName  = $group.SaveName
-            Timestamp = $group.Timestamp
-            Files     = @($group.Files | Sort-Object SourceName)
+            Type            = $group.Type
+            SaveName        = $group.SaveName
+            Timestamp       = $group.Timestamp
+            CollisionSuffix = $group.CollisionSuffix
+            Files           = @($group.Files | Sort-Object SourceName)
         }
     }
 
-    return @($points | Sort-Object @{ Expression = 'Timestamp'; Descending = $true }, @{ Expression = 'SaveName'; Descending = $true }, @{ Expression = 'Type'; Descending = $true })
+    return @($points | Sort-Object @{ Expression = 'Timestamp'; Descending = $true }, @{ Expression = 'CollisionSuffix'; Descending = $true }, @{ Expression = 'SaveName'; Descending = $true }, @{ Expression = 'Type'; Descending = $true })
 }
 
 function Test-RetentionFileProtected {
@@ -739,6 +784,63 @@ function Invoke-RollingReplacement {
     }
     catch {
         Write-Log "Rolling replacement error: $($_.Exception.Message)" 'WARN'
+    }
+}
+
+function Invoke-MilestoneRetention {
+    param([string[]] $KeepPaths = @())
+
+    try {
+        $keep = 5
+        if ($script:Config.PSObject.Properties.Name -contains 'keepMaxMilestones') {
+            $keep = [int]$script:Config.keepMaxMilestones
+        }
+        elseif ($script:Config.PSObject.Properties.Name -contains 'keepMaxBackupsPerSave') {
+            $keep = [int]$script:Config.keepMaxBackupsPerSave
+        }
+        if ($keep -lt 1) { return }
+
+        $folder = $script:Config.milestoneFolderPath
+        if (-not (Test-Path -LiteralPath $folder -PathType Container)) { return }
+
+        $keepMap = @{}
+        foreach ($p in @($KeepPaths)) {
+            if ($p) { $keepMap[(Get-FullBackupPath $p).ToLowerInvariant()] = $true }
+        }
+
+        $restorePoints = @(Get-RollingBackupRestorePoints -Folder $folder)
+        if ($restorePoints.Count -le $keep) { return }
+
+        $toDelete = @($restorePoints | Select-Object -Skip $keep)
+        foreach ($point in $toDelete) {
+            foreach ($file in @($point.Files)) {
+                if (-not (Test-PathInsideBackupFolder -Path $file.SourcePath -Folder $folder)) { continue }
+                $full = (Get-FullBackupPath $file.SourcePath).ToLowerInvariant()
+                if ($keepMap.ContainsKey($full)) {
+                    Write-Log "Skipped milestone retention delete for the newly created milestone '$($file.SourcePath)'" 'WARN'
+                    continue
+                }
+                if (Test-RetentionFileProtected -Path $file.SourcePath) {
+                    Write-Log "Skipped milestone retention delete for active restore source '$($file.SourcePath)'" 'WARN'
+                    continue
+                }
+
+                if ($DryRun) {
+                    Write-Log "[DRY-RUN] Would delete old milestone '$($file.SourcePath)'" 'DRYRUN'
+                    continue
+                }
+                try {
+                    Remove-Item -LiteralPath $file.SourcePath -Force
+                    Write-Log "Deleted old milestone '$($file.SourcePath)'"
+                }
+                catch {
+                    Write-Log "Failed to delete old milestone '$($file.SourcePath)': $($_.Exception.Message)" 'WARN'
+                }
+            }
+        }
+    }
+    catch {
+        Write-Log "Milestone retention error: $($_.Exception.Message)" 'WARN'
     }
 }
 
@@ -901,25 +1003,46 @@ function Invoke-BackupAll {
     Write-Log "One-time backup pass complete." 'INFO'
 }
 
-# Permanent milestone snapshot: copies ALL current save files into the milestone
-# folder with a single shared timestamp. These are NEVER deleted by retention
-# (retention only scans the top level of the backup folder, not subfolders / the
-# milestone folder). Use before anything risky in a lives-limited run.
+# Milestone snapshot: copies only the newest complete logical save group into
+# the milestone folder with a shared minute-precision timestamp. If the newest
+# live group is incomplete because the game is still writing, wait briefly and
+# re-scan; if it remains incomplete, choose the newest complete group instead.
 function Invoke-MilestoneBackup {
     $folder = $script:Config.saveFolderPath
     $dest   = $script:Config.milestoneFolderPath
 
-    try {
-        $groups = @(Get-LiveSaveGroups -Folder $folder)
+    $selection = $null
+    for ($scan = 1; $scan -le 2; $scan++) {
+        try {
+            $selection = Get-NewestCompleteLiveSaveGroup -Folder $folder
+        }
+        catch {
+            Write-Log "Could not list save folder '$folder': $($_.Exception.Message)" 'ERROR'
+            return
+        }
+
+        if (@($selection.Groups).Count -eq 0) {
+            Write-Log "No matching save files found to milestone in '$folder'." 'WARN'
+            return
+        }
+
+        if ($selection.Newest -and -not $selection.Newest.IsComplete -and $scan -eq 1) {
+            Write-Log "Newest save '$($selection.Newest.SaveName)' is incomplete; waiting briefly before choosing a milestone." 'WARN'
+            Start-Sleep -Seconds 1
+            continue
+        }
+
+        break
     }
-    catch {
-        Write-Log "Could not list save folder '$folder': $($_.Exception.Message)" 'ERROR'
+
+    $group = $selection.Complete
+    if ($null -eq $group) {
+        Write-Log "No complete logical save found for milestone. A complete save needs .scop + .scoc; .dds is optional." 'WARN'
         return
     }
 
-    if ($groups.Count -eq 0) {
-        Write-Log "No matching save files found to snapshot in '$folder'." 'WARN'
-        return
+    if ($selection.Newest -and $selection.Newest.SaveName -ine $group.SaveName) {
+        Write-Log "Newest save '$($selection.Newest.SaveName)' is incomplete; milestone will use newest complete save '$($group.SaveName)'." 'WARN'
     }
 
     if (-not $DryRun) {
@@ -931,47 +1054,59 @@ function Invoke-MilestoneBackup {
         catch { Write-Log "Could not create milestone folder '$dest': $($_.Exception.Message)" 'ERROR'; return }
     }
 
-    # Milestones keep a permanent, collision-safe second-precision timestamp shared
-    # across every save in this snapshot, so the whole moment is one set. They are
-    # NEVER replaced or auto-deleted (rolling replacement/retention ignore them).
-    $timestamp = Get-Date -Format 'yyyy-MM-dd_HH-mm-ss'
-    Write-Log "Creating PERMANENT milestone snapshot ($($groups.Count) save(s)) in '$dest'." 'INFO'
+    $groupFiles = @($group.Files)
 
-    foreach ($group in $groups) {
-        $groupFiles = @($group.Files)
-
-        if ($DryRun) {
-            Write-Log ("[DRY-RUN] Would create milestone for save '{0}' ({1} file(s)) in '{2}'" -f $group.SaveName, $groupFiles.Count, $dest) 'DRYRUN'
-            continue
-        }
-
-        # Wait for every file in the group to be readable/stable (same safety as
-        # normal backups) before snapshotting.
-        $ready = $true
-        foreach ($file in $groupFiles) {
-            $fileReady = $false
-            for ($attempt = 1; $attempt -le 5; $attempt++) {
-                if (Test-FileReady $file.FullName) { $fileReady = $true; break }
-                Write-Log "File not ready for milestone: '$($file.FullName)' (attempt $attempt/5)" 'WARN'
-                Start-Sleep -Seconds 1
-            }
-            if (-not $fileReady) { $ready = $false; break }
-        }
-        if (-not $ready) {
-            Write-Log "Skipping locked/unstable save for milestone: '$($group.SaveName)'" 'ERROR'
-            continue
-        }
-
-        $written = New-SaveGroupBackup -SaveName $group.SaveName -Files $groupFiles -DestFolder $dest -Timestamp $timestamp -UniqueCollision
-
-        if ($written) {
-            Write-Log ("Milestone saved '{0}' ({1} file(s)) -> '{2}'" -f $group.SaveName, @($written).Count, ($written -join '; ')) 'SUCCESS'
-        }
-        else {
-            Write-Log "Milestone FAILED for save '$($group.SaveName)'." 'ERROR'
-        }
+    if ($DryRun) {
+        Write-Log ("[DRY-RUN] Would create milestone for newest complete save '{0}' ({1} file(s)) in '{2}'" -f $group.SaveName, $groupFiles.Count, $dest) 'DRYRUN'
+        return
     }
-    Write-Log "Milestone snapshot complete (these are never auto-deleted)." 'INFO'
+
+    # Wait for every file in the group to be readable/stable (same safety as
+    # normal backups) before snapshotting.
+    $ready = $true
+    foreach ($file in $groupFiles) {
+        $fileReady = $false
+        for ($attempt = 1; $attempt -le 5; $attempt++) {
+            if (Test-FileReady $file.FullName) { $fileReady = $true; break }
+            Write-Log "File not ready for milestone: '$($file.FullName)' (attempt $attempt/5)" 'WARN'
+            Start-Sleep -Seconds 1
+        }
+        if (-not $fileReady) { $ready = $false; break }
+    }
+    if (-not $ready) {
+        Write-Log "Milestone skipped because newest complete save '$($group.SaveName)' is locked or still being written." 'ERROR'
+        return
+    }
+
+    try {
+        $groupFiles = @(Get-ChildItem -LiteralPath $folder -File -ErrorAction Stop | Where-Object {
+            ($script:Config.includeExtensions -contains $_.Extension.ToLowerInvariant()) -and
+            ([System.IO.Path]::GetFileNameWithoutExtension($_.Name) -ieq $group.SaveName)
+        })
+    }
+    catch {
+        Write-Log "Could not re-scan save '$($group.SaveName)' before milestone: $($_.Exception.Message)" 'ERROR'
+        return
+    }
+    if ($groupFiles.Count -eq 0 -or -not (Test-SaveGroupComplete -Files $groupFiles)) {
+        Write-Log "Milestone skipped because save '$($group.SaveName)' is no longer a complete .scop + .scoc pair." 'WARN'
+        return
+    }
+
+    # Minute precision keeps user-facing milestone names readable; collision
+    # suffixes keep rapid same-minute milestones distinct.
+    $timestamp = Get-Date -Format 'yyyy-MM-dd_HH-mm'
+    Write-Log ("Creating milestone from newest complete save '{0}' ({1} file(s)) in '{2}'." -f $group.SaveName, @($groupFiles).Count, $dest) 'INFO'
+
+    $written = New-SaveGroupBackup -SaveName $group.SaveName -Files $groupFiles -DestFolder $dest -Timestamp $timestamp -UniqueCollision
+
+    if ($written) {
+        Write-Log ("Milestone saved '{0}' ({1} file(s)) -> '{2}'" -f $group.SaveName, @($written).Count, ($written -join '; ')) 'SUCCESS'
+        Invoke-MilestoneRetention -KeepPaths @($written)
+    }
+    else {
+        Write-Log "Milestone FAILED for save '$($group.SaveName)'." 'ERROR'
+    }
 }
 
 # Continuous watch mode using FileSystemWatcher + a debounce buffer.
@@ -1072,7 +1207,7 @@ function Show-StartupSummary {
     Write-Host ("  Watched ext.     : {0}" -f $exts)
     Write-Host ("  Mode             : {0}" -f $Mode)
     Write-Host ("  Dry-run          : {0}" -f $dryState)
-    Write-Host ("  Retention        : keep newest backups for up to {0} logical saves" -f $script:Config.keepMaxBackupsPerSave)
+    Write-Host ("  Retention        : rolling {0}; milestones {1}" -f $script:Config.keepMaxBackupsPerSave, $script:Config.keepMaxMilestones)
     Write-Host ("  Zip backups      : {0}" -f $zipState)
     Write-Host ("  Backup delay     : {0} second(s)" -f $script:Config.backupDelaySeconds)
     Write-Host ("  Log file         : {0}" -f $script:Config.logFilePath)
@@ -1108,7 +1243,7 @@ if (-not $BackupNow -and -not $Watch -and -not $Milestone) {
     Write-Host 'Nothing to do. Choose a mode:' -ForegroundColor Yellow
     Write-Host '  .\backup-stalker-gamma-saves.ps1 -BackupNow          # one-time backup of all saves'
     Write-Host '  .\backup-stalker-gamma-saves.ps1 -Watch              # watch continuously'
-    Write-Host '  .\backup-stalker-gamma-saves.ps1 -Milestone          # permanent snapshot (never auto-deleted)'
+    Write-Host '  .\backup-stalker-gamma-saves.ps1 -Milestone          # milestone newest complete save'
     Write-Host '  .\backup-stalker-gamma-saves.ps1 -BackupNow -DryRun  # preview one-time backup'
     Write-Host '  .\backup-stalker-gamma-saves.ps1 -Watch -DryRun      # preview watch mode'
     exit 0

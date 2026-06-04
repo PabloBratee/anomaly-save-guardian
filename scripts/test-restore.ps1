@@ -356,6 +356,21 @@ try {
         Assert-Equal 3 $point.FileCount 'Grouped zip should expose all three save files.'
     }
 
+    Invoke-Test 'discovers one grouped milestone zip as a single complete restore point' {
+        $root = New-TestRoot
+        $cfg = Initialize-TestConfig -Root $root
+        New-ZipFromText (Join-Path $cfg.milestoneFolderPath 'milezip__2026-06-04_20-00.zip') @{
+            'milezip.scop' = 'zip-scope'
+            'milezip.scoc' = 'zip-scoc'
+            'milezip.dds'  = 'zip-thumb'
+        }
+
+        $point = Get-PointBySave @(Get-RestorePoints -Config $cfg) 'milezip' 'Milestone'
+        Assert-Equal 'Milestone' $point.Type 'Grouped zip in the milestone folder should be labeled as a milestone restore point.'
+        Assert-Equal 'Complete' $point.Status 'Milestone grouped zip with .scop + .scoc should be complete.'
+        Assert-Equal 3 $point.FileCount 'Milestone grouped zip should expose all three save files.'
+    }
+
     Invoke-Test 'restores a complete save from one grouped zip' {
         $root = New-TestRoot
         $cfg = Initialize-TestConfig -Root $root

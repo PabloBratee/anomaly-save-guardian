@@ -341,7 +341,7 @@ $form.Controls.Add($footer)
 # ---------------------------------------------------------------------------
 $script:Tip.SetToolTip($btnToggle, 'Start or stop automatic backups. While watching, every new or changed save is copied the moment it appears.')
 $script:Tip.SetToolTip($btnNow,    'Back up all current saves once, right now.')
-$script:Tip.SetToolTip($btnMile,   'Take a permanent snapshot of all current saves. Milestones are never auto-deleted - ideal before a risky fight or for hardcore / Invictus runs.')
+$script:Tip.SetToolTip($btnMile,   'Creates a milestone from the newest complete save.')
 $script:Tip.SetToolTip($btnRestore,'Choose a backup, review what will be restored, create a safety backup, then copy it back into the save folder.')
 $script:Tip.SetToolTip($btnOpen,   'Open the backup folder in Windows Explorer.')
 $script:Tip.SetToolTip($btnSet,    'Choose your save folder, backup folder and backup rules. No JSON editing needed.')
@@ -413,8 +413,9 @@ function Update-Info {
     Set-PathLabel $lblBakVal  $script:Config.backupFolderPath
     $exts = ($script:Config.includeExtensions -join '  ')
     $zip  = if ($script:Config.enableZipBackup) { '   (.zip per save)' } else { '' }
-    $lblRuleVal.Text = "$exts      -      newest backup per save, up to $($script:Config.keepMaxBackupsPerSave) saves$zip"
-    $script:Tip.SetToolTip($lblRuleVal, "File types backed up: $($script:Config.includeExtensions -join ' ')`r`nA logical save is .scop + .scoc, with an optional .dds thumbnail, grouped as one restore point.`r`nRolling backups keep the newest backup for each save name (up to $($script:Config.keepMaxBackupsPerSave) different saves). Milestones and pre-restore safety backups are kept separately.`r`nZip backups: $(if ($script:Config.enableZipBackup) { 'on - each save is stored as one .zip' } else { 'off' }).")
+    $mileKeep = if ($script:Config.PSObject.Properties.Name -contains 'keepMaxMilestones') { [int]$script:Config.keepMaxMilestones } else { 5 }
+    $lblRuleVal.Text = "$exts      -      rolling: newest per save; milestones: latest $mileKeep$zip"
+    $script:Tip.SetToolTip($lblRuleVal, "File types backed up: $($script:Config.includeExtensions -join ' ')`r`nA restore point is a complete save group: .scop + .scoc, with optional .dds.`r`nRolling backups keep the newest backup for each save name. Milestones keep the latest $mileKeep milestone restore points.`r`nZip backups: $(if ($script:Config.enableZipBackup) { 'on - each save is stored as one .zip' } else { 'off' }).")
     $lblFootBy.Text = 'Created by'
     $lblFootName.Text = 'GAM33RSFR33AK'
     $script:Tip.SetToolTip($lblFootBy, $creatorCredit)
@@ -498,7 +499,7 @@ function Invoke-WithBackingUpState {
 function Show-SettingsDialog {
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text = 'Settings'
-    $dlg.ClientSize = New-Object System.Drawing.Size(580, 558)
+    $dlg.ClientSize = New-Object System.Drawing.Size(580, 606)
     $dlg.StartPosition = 'CenterParent'
     $dlg.FormBorderStyle = 'FixedDialog'
     $dlg.MaximizeBox = $false; $dlg.MinimizeBox = $false
@@ -550,47 +551,54 @@ function Show-SettingsDialog {
     Add-Section 'FOLDERS' 14
     $tbSave = Add-Field 'Save folder'      44  $script:Config.saveFolderPath      $pickFolder 'Your STALKER Anomaly / GAMMA "appdata\savedgames" folder (the source).'
     $tbBak  = Add-Field 'Backup folder'    96  $script:Config.backupFolderPath    $pickFolder 'Where rolling backups are written. A second drive is recommended.'
-    $tbMile = Add-Field 'Milestone folder' 148 $script:Config.milestoneFolderPath $pickFolder 'Permanent snapshots, never auto-deleted. Blank = a "Milestones" subfolder.'
+    $tbMile = Add-Field 'Milestone folder' 148 $script:Config.milestoneFolderPath $pickFolder 'Newest-complete-save milestones are kept here. Blank = a "Milestones" subfolder.'
 
     # --- BACKUP BEHAVIOR ---
     Add-Section 'BACKUP BEHAVIOR' 206
     $tbExt = Add-Field 'File types' 236 ($script:Config.includeExtensions -join ' ') $null 'One save = .scop + .scoc (a full save) plus an optional .dds thumbnail, grouped together.'
 
-    $dlg.Controls.Add((New-Label 'Keep saves' 18 292 96 20 $cMuted $fBody))
+    $dlg.Controls.Add((New-Label 'Keep rolling' 18 292 96 20 $cMuted $fBody))
     $numKeep = New-Object System.Windows.Forms.NumericUpDown
     $numKeep.SetBounds(118, 288, 84, 24); $numKeep.Minimum = 1; $numKeep.Maximum = 100000
     $numKeep.BackColor = $cCardHi; $numKeep.ForeColor = $cText; $numKeep.BorderStyle = 'FixedSingle'
     $numKeep.Value = [Math]::Min(100000, [Math]::Max(1, [int]$script:Config.keepMaxBackupsPerSave))
 
-    $dlg.Controls.Add((New-Label 'Settle delay (sec)' 232 292 110 20 $cMuted $fBody))
+    $dlg.Controls.Add((New-Label 'Keep milestones' 232 292 110 20 $cMuted $fBody))
+    $numMile = New-Object System.Windows.Forms.NumericUpDown
+    $numMile.SetBounds(346, 288, 70, 24); $numMile.Minimum = 1; $numMile.Maximum = 100000
+    $numMile.BackColor = $cCardHi; $numMile.ForeColor = $cText; $numMile.BorderStyle = 'FixedSingle'
+    $mileKeep = if ($script:Config.PSObject.Properties.Name -contains 'keepMaxMilestones') { [int]$script:Config.keepMaxMilestones } else { 5 }
+    $numMile.Value = [Math]::Min(100000, [Math]::Max(1, $mileKeep))
+    $dlg.Controls.Add((New-Label 'Rolling backups keep the newest backup for each save name. Milestones keep the latest restore points. Default: 5.' 118 316 452 16 $cFaint $fSmall))
+
+    $dlg.Controls.Add((New-Label 'Settle delay (sec)' 18 342 110 20 $cMuted $fBody))
     $numDelay = New-Object System.Windows.Forms.NumericUpDown
-    $numDelay.SetBounds(346, 288, 70, 24); $numDelay.Minimum = 0; $numDelay.Maximum = 120
+    $numDelay.SetBounds(118, 338, 84, 24); $numDelay.Minimum = 0; $numDelay.Maximum = 120
     $numDelay.BackColor = $cCardHi; $numDelay.ForeColor = $cText; $numDelay.BorderStyle = 'FixedSingle'
     $numDelay.Value = [Math]::Min(120, [Math]::Max(0, [int]$script:Config.backupDelaySeconds))
-    $dlg.Controls.Add((New-Label 'Newest backup per save name, for up to this many saves. Milestones/safety backups stay separate.' 118 316 452 16 $cFaint $fSmall))
 
     $chkZip = New-Object System.Windows.Forms.CheckBox
     $chkZip.Text = 'Store each save as one .zip'
-    $chkZip.SetBounds(116, 342, 320, 22)
+    $chkZip.SetBounds(116, 386, 320, 22)
     $chkZip.ForeColor = $cText; $chkZip.BackColor = [System.Drawing.Color]::Transparent
     $chkZip.Checked = [bool]$script:Config.enableZipBackup
     $dlg.Controls.Add($chkZip)
-    $dlg.Controls.Add((New-Label 'Zip mode stores each complete save (.scop+.scoc+.dds) as one .zip. Off = plain copies (easiest to restore).' 118 366 452 16 $cFaint $fSmall))
+    $dlg.Controls.Add((New-Label 'Zip mode stores each complete save (.scop+.scoc+.dds) as one .zip. Off = plain copies (easiest to restore).' 118 410 452 16 $cFaint $fSmall))
 
     # --- ADVANCED & LOGGING ---
-    Add-Section 'ADVANCED & LOGGING' 396
-    $tbLog = Add-Field 'Log file' 426 $script:Config.logFilePath $pickFile 'Where the text log is written. Handy if you ever need to see what happened.'
+    Add-Section 'ADVANCED & LOGGING' 440
+    $tbLog = Add-Field 'Log file' 470 $script:Config.logFilePath $pickFile 'Where the text log is written. Handy if you ever need to see what happened.'
 
     # --- Validation summary + buttons ---
-    $lblErr = New-Label '' 18 470 544 30 $cRed $fSmall
+    $lblErr = New-Label '' 18 514 544 30 $cRed $fSmall
     $dlg.Controls.Add($lblErr)
 
-    $numKeep.TabIndex = 10; $numDelay.TabIndex = 11; $chkZip.TabIndex = 12
-    $dlg.Controls.AddRange(@($numKeep, $numDelay))
+    $numKeep.TabIndex = 10; $numMile.TabIndex = 11; $numDelay.TabIndex = 12; $chkZip.TabIndex = 13
+    $dlg.Controls.AddRange(@($numKeep, $numMile, $numDelay))
 
-    $btnReset  = New-Button 'Reset to defaults' 18  510 150 32 $cCard   $cMuted $fSmall
-    $btnSave   = New-Button 'Save'              320 510 116 32 $cAccent $cBlack
-    $btnCancel = New-Button 'Cancel'            446 510 116 32 $cCard   $cText
+    $btnReset  = New-Button 'Reset to defaults' 18  558 150 32 $cCard   $cMuted $fSmall
+    $btnSave   = New-Button 'Save'              320 558 116 32 $cAccent $cBlack
+    $btnCancel = New-Button 'Cancel'            446 558 116 32 $cCard   $cText
     $dlg.Controls.AddRange(@($btnReset, $btnSave, $btnCancel))
 
     $script:Tip.SetToolTip($btnReset, 'Reload the fields from the bundled example. Nothing is saved until you click Save.')
@@ -605,6 +613,7 @@ function Show-SettingsDialog {
             $tbMile.Text = $ex.milestoneFolderPath; $tbLog.Text = $ex.logFilePath
             $tbExt.Text  = ($ex.includeExtensions -join ' ')
             $numKeep.Value  = [Math]::Min(100000, [Math]::Max(1, [int]$ex.keepMaxBackupsPerSave))
+            $numMile.Value  = [Math]::Min(100000, [Math]::Max(1, [int]$ex.keepMaxMilestones))
             $numDelay.Value = [Math]::Min(120, [Math]::Max(0, [int]$ex.backupDelaySeconds))
             $chkZip.Checked = [bool]$ex.enableZipBackup
             $lblErr.ForeColor = $cMuted; $lblErr.Text = 'Fields reset to example defaults. Review them, then click Save.'
@@ -663,6 +672,7 @@ function Show-SettingsDialog {
             includeExtensions     = $exts
             backupDelaySeconds    = [double]$numDelay.Value
             keepMaxBackupsPerSave = [int]$numKeep.Value
+            keepMaxMilestones     = [int]$numMile.Value
             enableZipBackup       = [bool]$chkZip.Checked
             logFilePath           = $logp
         }
@@ -1120,7 +1130,7 @@ $form.Add_Shown({
 # ---------------------------------------------------------------------------
 Write-Log "Ready - settings loaded from config." 'INFO'
 Write-Log "Click 'Start Watching' to auto-backup every save while you play." 'INFO'
-Write-Log "Use 'Take Milestone' for a permanent, never-deleted snapshot." 'INFO'
+Write-Log "Use 'Take Milestone' to back up the newest complete save as a milestone." 'INFO'
 Write-Log "Closing the X keeps the app running in the system tray." 'INFO'
 Show-EmptyLogHint
 

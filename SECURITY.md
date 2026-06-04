@@ -16,11 +16,12 @@ By design:
 - Backup files are never modified or deleted during restore. Zip restore points
   are validated and extracted to a temporary folder first so unsafe paths are
   blocked before anything is copied into the live save folder.
-- The only files the tool ever **deletes** are old normal rolling backup restore
-  points inside the configured backup folder, either when replacing the previous
-  backup for the same save name or applying retention. Milestone snapshots and
-  pre-restore safety backups are kept separately and are never deleted by normal
-  rolling replacement/retention.
+- The only files the tool ever **deletes** are old restore points inside their
+  configured backup areas. Rolling replacement/retention deletes only old
+  rolling restore points inside the configured backup folder. Milestone
+  retention deletes only old milestone restore points inside the configured
+  milestone folder. Live savedgames, pre-restore safety backups, config files,
+  logs and unrelated folders are not deleted by retention.
 - Your personal config (`stalker-gamma-backup-config.json`) stays on your
   machine and is git-ignored.
 
