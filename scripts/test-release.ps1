@@ -366,6 +366,8 @@ try {
         $uiSource = Get-Content -LiteralPath $uiPath -Raw
 
         Assert-True ($uiSource -like '*Created by GAM33RSFR33AK*') 'Expected main UI source to include the creator credit.'
+        Assert-True ($uiSource -like "*`$lblFootBy = New-Label 'Created by'*") 'Footer should render "Created by" as its own label.'
+        Assert-True ($uiSource -like "*`$lblFootName = New-Label 'GAM33RSFR33AK'*") 'Footer should render the creator name as its own label with a visible gap.'
         Assert-True ($uiSource -notmatch '\$lblFoot\.Text\s*=.*Config:') 'Main footer should not replace the creator credit with the config path.'
         Assert-True ($uiSource -notmatch 'SetToolTip\(\$lblFoot,\s*\$script:ConfigPath\)') 'Main footer should not expose the config path tooltip.'
     }

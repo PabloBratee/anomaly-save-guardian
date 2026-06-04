@@ -329,9 +329,11 @@ $form.Controls.AddRange(@($lblAct, $btnClear, $log))
 
 # --- Footer ---
 $footer   = New-Panel 0 610 700 30 $cHeader
-$lblFoot  = New-Label 'Created by GAM33RSFR33AK' 16 7 430 16 $cFaint $fSmall
+$creatorCredit = 'Created by GAM33RSFR33AK'
+$lblFootBy = New-Label 'Created by' 16 7 64 16 $cFaint $fSmall
+$lblFootName = New-Label 'GAM33RSFR33AK' 88 7 150 16 $cFaint $fSmall
 $lblFootR = New-Label 'Originals are never modified' 454 7 230 16 $cFaint $fSmall 'TopRight'
-$footer.Controls.AddRange(@($lblFoot, $lblFootR))
+$footer.Controls.AddRange(@($lblFootBy, $lblFootName, $lblFootR))
 $form.Controls.Add($footer)
 
 # ---------------------------------------------------------------------------
@@ -413,8 +415,10 @@ function Update-Info {
     $zip  = if ($script:Config.enableZipBackup) { '   (.zip)' } else { '' }
     $lblRuleVal.Text = "$exts      -      keep latest $($script:Config.keepMaxBackupsPerSave) restore points$zip"
     $script:Tip.SetToolTip($lblRuleVal, "File types backed up: $($script:Config.includeExtensions -join ' ')`r`nRolling backups keep the latest $($script:Config.keepMaxBackupsPerSave) restore points. Milestones and pre-restore safety backups are kept separately.`r`nZip backups: $(if ($script:Config.enableZipBackup) { 'on' } else { 'off' }).")
-    $lblFoot.Text = 'Created by GAM33RSFR33AK'
-    $script:Tip.SetToolTip($lblFoot, 'Created by GAM33RSFR33AK')
+    $lblFootBy.Text = 'Created by'
+    $lblFootName.Text = 'GAM33RSFR33AK'
+    $script:Tip.SetToolTip($lblFootBy, $creatorCredit)
+    $script:Tip.SetToolTip($lblFootName, $creatorCredit)
 }
 
 function Show-EmptyLogHint {
