@@ -9,6 +9,7 @@ What problem does it solve?
 ## Checklist
 
 - [ ] `.\scripts\check-syntax.ps1` passes (all `.ps1` parse cleanly)
+- [ ] `.\scripts\test-release.ps1` passes using temporary fake saves only
 - [ ] UI still constructs: `powershell -STA -ExecutionPolicy Bypass -File .\stalker-gamma-backup-ui.ps1 -NoShow`
 - [ ] No external dependencies added (built-in PowerShell 5.1 / .NET only)
 - [ ] Original saves are still only ever read/copied — never modified, moved, renamed, or deleted

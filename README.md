@@ -60,10 +60,11 @@ Built entirely on **built-in PowerShell / .NET** — nothing to install.
    The folder must contain at least:
    - `backup-stalker-gamma-saves.ps1`
    - `stalker-gamma-backup-ui.ps1`
+   - `Launch STALKER GAMMA Save Backup.cmd`
    - `stalker-gamma-backup-config.example.json`
    - `stalker-gamma-backup.ico`
-2. **Run** `stalker-gamma-backup-ui.ps1` (double-click, or make a shortcut —
-   see below). On first run it creates your personal
+2. **Run** `Launch STALKER GAMMA Save Backup.cmd` (double-click it), or make a
+   shortcut — see below. On first run it creates your personal
    `stalker-gamma-backup-config.json` and shows a short **welcome** that walks
    you through setup.
 3. In **Settings**, point **Save folder** and **Backup folder** at the right
@@ -79,7 +80,7 @@ Built entirely on **built-in PowerShell / .NET** — nothing to install.
 ### Launch it like an app
 
 The folder ships with a double-clickable launcher so you don't have to touch
-PowerShell:
+PowerShell or change system execution policy:
 
 - **`Launch STALKER GAMMA Save Backup.cmd`** — just double-click it. It finds
   its own folder, so it works wherever you put the files, and starts the app
@@ -214,8 +215,9 @@ The short version:
    the same timestamp — restore **both** (the `.dds` thumbnail is optional). If
    it's a `.zip`, extract it first.
 4. Copy the file(s) into your save folder.
-5. Remove the `__YYYY-MM-DD_HH-mm-ss` part from each name, e.g.
-   `quicksave__2026-06-04_22-30-15.scop` → `quicksave.scop`.
+5. Remove the `__YYYY-MM-DD_HH-mm-ss` part from each name (and any collision
+   suffix like `__002`), e.g. `quicksave__2026-06-04_22-30-15.scop` →
+   `quicksave.scop`.
 6. Launch the game and load it.
 
 Copying into your save folder does **not** affect your backups — they stay
@@ -236,7 +238,9 @@ The engine works without the GUI:
 ```
 
 Backups are named `OriginalSaveName__YYYY-MM-DD_HH-mm-ss.ext`
-(e.g. `quicksave__2026-06-04_22-30-15.scop`).
+(e.g. `quicksave__2026-06-04_22-30-15.scop`). If you create two backups with
+the same timestamp, the later one gets a suffix such as
+`quicksave__2026-06-04_22-30-15__002.scop` instead of overwriting the first.
 
 ---
 
@@ -327,6 +331,8 @@ Want to publish or grab a clean download?
   ```
   This creates `dist\STALKER-GAMMA-Save-Backup-vX.Y.Z.zip` and prints the exact
   steps to tag and publish a GitHub Release. The `dist\` folder is git-ignored.
+  For the full v1.1.0 checklist, see
+  [docs/release-checklist.md](docs/release-checklist.md).
 
 ---
 
@@ -335,11 +341,15 @@ Want to publish or grab a clean download?
 ```
 backup-stalker-gamma-saves.ps1          # backup engine + CLI (also a library)
 stalker-gamma-backup-ui.ps1             # the GUI app
+Launch STALKER GAMMA Save Backup.cmd    # double-click launcher
+Create-Desktop-Shortcut.ps1             # desktop shortcut helper
 stalker-gamma-backup-config.example.json# template (committed)
 stalker-gamma-backup-config.json        # your personal config (git-ignored)
 stalker-gamma-backup.ico                # app/tray icon
 scripts/check-syntax.ps1                # parse-check all .ps1 files
+scripts/test-release.ps1                # safe fake-save release tests
 scripts/package-release.ps1             # build a clean release .zip
+docs/release-checklist.md               # maintainer release checklist
 README.md  CHANGELOG.md  LICENSE  SECURITY.md  CONTRIBUTING.md  .gitignore
 ```
 

@@ -20,8 +20,21 @@ STALKER-GAMMA-Save-Backup-v*.zip
 # Generated preview/scratch
 ui-preview.png
 sgb-*.png
+sgb-release-test-*/
+tmp/
+temp/
+*.tmp
+*.bak
+*.orig
 
 # Windows cruft
 Thumbs.db
 desktop.ini
 *.lnk
+
+# Editor / local tooling
+.vscode/
+.idea/
+.vs/
+*.swp
+*.swo

@@ -350,6 +350,36 @@ function New-ZipBackup {
     }
 }
 
+# Return the requested backup path, or a suffixed sibling if that exact timestamp
+# already exists. This keeps backups append-only even for rapid manual actions.
+function Get-UniqueBackupPath {
+    param([Parameter(Mandatory)] [string] $DestinationPath)
+
+    if (-not (Test-Path -LiteralPath $DestinationPath)) { return $DestinationPath }
+
+    $dir = Split-Path -Parent $DestinationPath
+    $leaf = Split-Path -Leaf $DestinationPath
+    $ext = [System.IO.Path]::GetExtension($leaf)
+    $stem = [System.IO.Path]::GetFileNameWithoutExtension($leaf)
+
+    # Zip backups are named "save__timestamp.ext.zip"; keep the collision suffix
+    # before the save extension so retention still matches "save__*.ext.zip".
+    if ($ext -ieq '.zip') {
+        $innerExt = [System.IO.Path]::GetExtension($stem)
+        if ($innerExt) {
+            $stem = [System.IO.Path]::GetFileNameWithoutExtension($stem)
+            $ext = "$innerExt.zip"
+        }
+    }
+
+    for ($i = 2; $i -le 9999; $i++) {
+        $candidate = Join-Path $dir ("{0}__{1:D3}{2}" -f $stem, $i, $ext)
+        if (-not (Test-Path -LiteralPath $candidate)) { return $candidate }
+    }
+
+    throw "Could not create a unique backup name for '$DestinationPath'."
+}
+
 # Retention: for one original save (base name + extension), keep only the newest
 # N backups in the backup folder and delete the rest. Conservative + scoped to
 # the backup folder only. NEVER touches the save folder.
@@ -475,7 +505,7 @@ function Invoke-BackupForFile {
     else {
         $destName = "${base}__${timestamp}${ext}"
     }
-    $destPath = Join-Path $script:Config.backupFolderPath $destName
+    $destPath = Get-UniqueBackupPath -DestinationPath (Join-Path $script:Config.backupFolderPath $destName)
 
     if ($DryRun) {
         Write-Log "[DRY-RUN] Would back up '$FilePath' -> '$destPath'" 'DRYRUN'
@@ -586,7 +616,7 @@ function Invoke-MilestoneBackup {
         else {
             $destName = "${base}__${timestamp}${ext}"
         }
-        $destPath = Join-Path $dest $destName
+        $destPath = Get-UniqueBackupPath -DestinationPath (Join-Path $dest $destName)
 
         if ($DryRun) {
             Write-Log "[DRY-RUN] Would create milestone '$($file.FullName)' -> '$destPath'" 'DRYRUN'

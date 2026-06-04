@@ -38,6 +38,9 @@ config format — your existing `stalker-gamma-backup-config.json` keeps working
   layout never breaks.
 - Settings now clears the in-memory backup cache after a save, so changed paths
   take effect immediately.
+- Rapid manual backups or milestones that land in the same second now get a
+  `__002`-style suffix instead of overwriting an existing backup with the same
+  timestamp.
 - Expanded README with *Recommended setup*, *Troubleshooting*, *Safety* and
   *Releases* sections; refreshed screenshot.
 - `&` now renders literally in labels and headers (no accidental mnemonics).
@@ -46,6 +49,8 @@ config format — your existing `stalker-gamma-backup-config.json` keeps working
 - Still 100% built-in PowerShell / .NET — no dependencies.
 - Original saves are still only ever read and copied — never modified, moved,
   renamed, or deleted.
+- Added safe fake-save release tests for backup copying, retention, milestones,
+  config errors, extension filtering and zip mode.
 
 ## [1.0.0] - 2026-06-04
 

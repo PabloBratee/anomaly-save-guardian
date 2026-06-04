@@ -24,6 +24,7 @@ portable, and safe for non-technical players.
 | `stalker-gamma-backup-ui.ps1` | The WinForms desktop app. |
 | `stalker-gamma-backup-config.example.json` | Config template (committed). |
 | `scripts/check-syntax.ps1` | Parse-checks every `.ps1`. Run before pushing. |
+| `scripts/test-release.ps1` | Runs safe temp-folder fake-save release tests. |
 | `scripts/package-release.ps1` | Builds a clean release `.zip`. |
 
 ## Before you open a PR
@@ -32,17 +33,21 @@ portable, and safe for non-technical players.
    ```powershell
    .\scripts\check-syntax.ps1
    ```
-2. **Build the UI** without showing it (sanity check that it constructs):
+2. **Run the safe fake-save release tests**:
+   ```powershell
+   .\scripts\test-release.ps1
+   ```
+3. **Build the UI** without showing it (sanity check that it constructs):
    ```powershell
    powershell -STA -ExecutionPolicy Bypass -File .\stalker-gamma-backup-ui.ps1 -NoShow
    ```
-3. **Test the engine safely** against throwaway folders with `-DryRun` and/or a
+4. **Test the engine safely** against throwaway folders with `-DryRun` and/or a
    temporary fake save folder — never your real saves.
-4. Keep **PowerShell 5.1 compatibility** (don't rely on PS7-only syntax).
-5. Avoid risky Unicode glyphs in source; build them by char code as the existing
+5. Keep **PowerShell 5.1 compatibility** (don't rely on PS7-only syntax).
+6. Avoid risky Unicode glyphs in source; build them by char code as the existing
    code does (e.g. `[char]0x25B6`).
-6. If you change the UI, mention that the screenshot may need updating.
-7. If you add a config key, give it a **backward-compatible default** in
+7. If you change the UI, mention that the screenshot may need updating.
+8. If you add a config key, give it a **backward-compatible default** in
    `Import-BackupConfig` and document it in the README.
 
 ## Commit / PR style

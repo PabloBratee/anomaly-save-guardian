@@ -636,9 +636,10 @@ function Show-RestoreDialog {
 
 5.  Copy the file(s) into your savedgames folder (your "Save folder").
 
-6.  Remove the timestamp from each name, for example:
-        quicksave__2026-06-04_22-30-15.scop   ->   quicksave.scop
-        quicksave__2026-06-04_22-30-15.scoc   ->   quicksave.scoc
+6.  Remove the timestamp from each name (and any __002 collision suffix), for
+    example:
+        quicksave__2026-06-04_22-30-15.scop        ->   quicksave.scop
+        quicksave__2026-06-04_22-30-15__002.scoc   ->   quicksave.scoc
 
 7.  Launch the game and load the save.
 
