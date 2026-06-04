@@ -40,6 +40,7 @@ if (-not $Version) {
 # The exact set of files a user needs to run the app.
 $include = @(
     'backup-stalker-gamma-saves.ps1',
+    'restore-stalker-gamma-saves.ps1',
     'stalker-gamma-backup-ui.ps1',
     'stalker-gamma-backup-config.example.json',
     'stalker-gamma-backup.ico',

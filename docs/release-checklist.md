@@ -10,12 +10,17 @@ Use this checklist to publish `v1.1.0`.
   ```powershell
   .\scripts\check-syntax.ps1
   .\scripts\test-release.ps1
+  .\scripts\test-restore.ps1
+  powershell -STA -NoProfile -ExecutionPolicy Bypass -File .\stalker-gamma-backup-ui.ps1 -NoShow
   ```
 - Build the package:
   ```powershell
   .\scripts\package-release.ps1
   ```
 - Inspect `dist\STALKER-GAMMA-Save-Backup-v1.1.0.zip` before uploading.
+- Confirm the zip contains `restore-stalker-gamma-saves.ps1` and does not
+  contain personal config, logs, temp folders, `.git`, `.github`, tests or a
+  nested `dist` folder.
 
 ## Publish
 

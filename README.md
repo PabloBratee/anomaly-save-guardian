@@ -9,9 +9,10 @@ Built entirely on **built-in PowerShell / .NET** — nothing to install.
 
 ![The STALKER GAMMA Save Backup app, watching and backing up saves](screenshot.png)
 
-> **🛡️ Safe by design:** your original saves are only ever *read and copied* —
-> never modified, renamed, moved, or deleted. The only files the tool ever
-> deletes are *old backup copies* in the backup folder (retention), and
+> **🛡️ Safe by design:** automatic backups only read and copy your original
+> saves. Restores are guided, ask for confirmation, and create a pre-restore
+> safety backup before overwriting matching live save files. The only files the
+> tool ever deletes are *old backup copies* in the backup folder (retention), and
 > milestone snapshots are never deleted at all.
 
 ---
@@ -27,7 +28,8 @@ Built entirely on **built-in PowerShell / .NET** — nothing to install.
   JSON editing required.
 - 🧰 **In-app Settings** — grouped, with folder pickers, helper text, validation
   and a *Reset to defaults* button.
-- 🛟 **Built-in "How to Restore" guide** — step-by-step, right inside the app.
+- 🛟 **Restore Backup** — choose a restore point, review the files, create a
+  safety backup, then restore with confirmation.
 - 🗂️ **Timestamped, append-only** backups — a death can never overwrite an
   older backup.
 - ♻️ **Retention** — keep the newest *N* backups per save; old ones pruned
@@ -135,9 +137,9 @@ via the shortcut's **Properties → Change Icon**.
 | **Start / Stop Watching** | Toggles automatic backups (green = idle, red = watching). |
 | **Backup Now** | Backs up all current saves once, immediately. |
 | **Take Milestone** | Permanent snapshot of all current saves — never auto-deleted. |
+| **Restore Backup** | Opens a guided restore flow for rolling, milestone, and safe zip restore points. |
 | **Open Folder** | Opens the backup folder in Explorer. |
 | **Settings** | Change folders, file types, retention, delay, zip mode. No JSON editing. |
-| **How to Restore** | Opens a step-by-step guide for putting a save back. |
 | **Clear** | Clears the on-screen activity log (touches no files). |
 
 Hover any button for a tooltip explaining what it does.
@@ -206,22 +208,46 @@ own retention bucket.
 
 ## Restoring a save
 
-The app has a built-in **How to Restore** button that walks you through this.
-The short version:
+Use **Restore Backup** in the main window.
 
-1. **Close the game.**
-2. Open your backup folder (or the `Milestones` subfolder).
-3. Pick the backup you want. A full save is the **`.scop` + `.scoc` pair** with
-   the same timestamp — restore **both** (the `.dds` thumbnail is optional). If
-   it's a `.zip`, extract it first.
-4. Copy the file(s) into your save folder.
-5. Remove the `__YYYY-MM-DD_HH-mm-ss` part from each name (and any collision
-   suffix like `__002`), e.g. `quicksave__2026-06-04_22-30-15.scop` →
-   `quicksave.scop`.
-6. Launch the game and load it.
+1. **Close the game completely first.**
+2. Click **Restore Backup**.
+3. Pick a restore point from the list. Newest backups are shown first, with the
+   save name, backup time, type, status, and file count.
+4. Review exactly what will be copied into your live save folder and which live
+   files will be overwritten.
+5. Confirm the restore.
+6. The app creates a pre-restore safety backup, then copies the selected backup
+   files back using the original game save names.
+7. Launch the game and load the save.
 
-Copying into your save folder does **not** affect your backups — they stay
-exactly where they are.
+A full GAMMA/Anomaly save needs the matching **`.scop` + `.scoc` pair** with the
+same timestamp. The **`.dds` thumbnail is optional** and is restored when it is
+available. If the required pair is missing, the app marks the restore point as
+**Missing pair** and blocks restore by default.
+
+### Pre-restore safety backups
+
+Before overwriting any matching live save file, the app copies the current live
+file into:
+
+```
+<backup folder>\PreRestoreSafetyBackups\yyyy-MM-dd_HH-mm-ss_restore_<save-name>
+```
+
+It also writes a small `restore-manifest.txt`. If the safety backup cannot be
+created, restore is cancelled before anything is copied into the live save
+folder. Safety backups are not touched by retention cleanup.
+
+### Zip restore
+
+If zip backups exist, **Restore Backup** shows them as `Zip` restore points. Zip
+files are checked first, extracted to a temporary folder, and only then copied
+into the live save folder. Zip entries with folders, `..`, unexpected names, or
+unexpected extensions are blocked to prevent path traversal.
+
+Restoring does **not** modify or delete backup files — they stay exactly where
+they are.
 
 ---
 
@@ -288,9 +314,23 @@ folder for a `*.scop` file — that folder is the one you want.
 - Check the **Activity log** in the app, or the log file, for errors.
 - Try **Backup Now** for an immediate one-off pass.
 
-**I need to load an old save.** Click **How to Restore** in the app, or see
-[Restoring a save](#restoring-a-save) above. Always close the game first and
-restore the matching `.scop` + `.scoc` pair together.
+**I need to load an old save.** Click **Restore Backup** in the app, or see
+[Restoring a save](#restoring-a-save) above. Always close the game first. The
+app blocks incomplete `.scop` / `.scoc` pairs and creates a safety backup before
+overwriting matching live files.
+
+**Restore Backup says “Missing pair”.** That backup is missing either the
+`.scop` or `.scoc` file for the selected timestamp. Pick another restore point,
+or check whether the matching file is in a different folder.
+
+**Restore failed before copying.** Check that the save folder and backup folder
+still exist, and that the backup drive is connected. If the pre-restore safety
+backup cannot be created, the restore is cancelled before live files are
+overwritten.
+
+**A zip restore was blocked.** The zip did not look like a backup created by the
+app, or it contained an unsafe entry. Use a normal restore point or inspect the
+backup manually before trying again.
 
 **My save and backup folders are the same / on the same disk.** Use two
 *different* folders, ideally on two *different* drives. The Settings dialog warns
@@ -303,8 +343,10 @@ that disk failing.
 
 This tool is built to be trustworthy with your saves:
 
-- **Originals are read-only to the tool.** Saves are only ever opened for reading
-  and copied out. They are never modified, renamed, moved, or deleted.
+- **Backups are read-only during restore.** Restore reads backup files and copies
+  them into the live save folder. Backup files are never modified or deleted.
+- **Live files are protected before overwrite.** Restore first creates a
+  pre-restore safety backup of matching live files. If that fails, restore stops.
 - **Deletions are scoped and conservative.** Retention only deletes *backup
   copies* it created, and only those physically inside the backup folder.
   Milestone snapshots are never deleted.
@@ -340,6 +382,7 @@ Want to publish or grab a clean download?
 
 ```
 backup-stalker-gamma-saves.ps1          # backup engine + CLI (also a library)
+restore-stalker-gamma-saves.ps1         # restore discovery, validation and copy helpers
 stalker-gamma-backup-ui.ps1             # the GUI app
 Launch STALKER GAMMA Save Backup.cmd    # double-click launcher
 Create-Desktop-Shortcut.ps1             # desktop shortcut helper
@@ -348,6 +391,7 @@ stalker-gamma-backup-config.json        # your personal config (git-ignored)
 stalker-gamma-backup.ico                # app/tray icon
 scripts/check-syntax.ps1                # parse-check all .ps1 files
 scripts/test-release.ps1                # safe fake-save release tests
+scripts/test-restore.ps1                # safe fake-save restore tests
 scripts/package-release.ps1             # build a clean release .zip
 docs/release-checklist.md               # maintainer release checklist
 README.md  CHANGELOG.md  LICENSE  SECURITY.md  CONTRIBUTING.md  .gitignore

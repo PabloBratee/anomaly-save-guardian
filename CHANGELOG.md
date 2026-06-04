@@ -5,8 +5,8 @@ All notable changes to this project are documented here. This project follows
 
 ## [1.1.0] - 2026-06-04
 
-A UX and public-readiness release. No changes to the save/backup behaviour or
-config format — your existing `stalker-gamma-backup-config.json` keeps working.
+A UX, restore and public-readiness release. No changes to the backup config
+format — your existing `stalker-gamma-backup-config.json` keeps working.
 
 ### Added
 - **Guided first-run welcome** that explains setup in three steps and reassures
@@ -15,13 +15,20 @@ config format — your existing `stalker-gamma-backup-config.json` keeps working
 - **Clear status area** with five colour-coded states: *Idle*, *Watching*,
   *Waiting for backup drive*, *Backing up*, and *Needs attention* — plus a
   "last backup at HH:mm:ss" reassurance while watching.
-- **In-app "How to Restore" guide** with step-by-step instructions and an
-  *Open backup folder* shortcut.
+- **Guided Restore Backup flow** that lists rolling, milestone and zip restore
+  points, previews exactly what will be copied, warns to close the game, creates
+  a pre-restore safety backup, and restores the selected save after confirmation.
+- **Restore safety checks** for complete `.scop` + `.scoc` pairs, optional
+  `.dds` thumbnails, timestamp and `__002` suffix stripping, destination path
+  validation, and zip path traversal blocking.
 - **Tooltips** on all major controls.
 - **Reset to defaults** button in Settings (reloads the example template).
 - **Inline validation** in Settings: warns about missing save folder, an offline
   backup drive, or identical save/backup folders, with friendly messages.
 - `scripts/check-syntax.ps1` — parse-checks every `.ps1` file.
+- `scripts/test-restore.ps1` — fake-save tests for restore discovery,
+  pre-restore safety backups, incomplete-pair blocking, zip restore and zip-slip
+  protection.
 - `scripts/package-release.ps1` — builds a clean release `.zip` containing only
   the files users need (git-ignored `dist/`).
 - Community files: `CONTRIBUTING.md`, `SECURITY.md`, issue templates and a pull
@@ -45,12 +52,19 @@ config format — your existing `stalker-gamma-backup-config.json` keeps working
   *Releases* sections; refreshed screenshot.
 - `&` now renders literally in labels and headers (no accidental mnemonics).
 
+### Security / Safety
+- Restore never deletes live saves or backups, never modifies backup files, and
+  refuses to overwrite matching live files unless the pre-restore safety backup
+  succeeds first.
+- Pre-restore safety backups are stored under
+  `PreRestoreSafetyBackups\yyyy-MM-dd_HH-mm-ss_restore_<save-name>` inside the
+  configured backup folder and are not part of retention cleanup.
+
 ### Notes
 - Still 100% built-in PowerShell / .NET — no dependencies.
-- Original saves are still only ever read and copied — never modified, moved,
-  renamed, or deleted.
+- Automatic backup still only reads and copies original saves.
 - Added safe fake-save release tests for backup copying, retention, milestones,
-  config errors, extension filtering and zip mode.
+  config errors, extension filtering, zip mode and guided restore behavior.
 
 ## [1.0.0] - 2026-06-04
 

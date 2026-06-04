@@ -9,7 +9,13 @@ dependencies.
 By design:
 
 - Your original save files are only ever **read and copied** — never modified,
-  moved, renamed, or deleted.
+  moved, renamed, or deleted during automatic backup.
+- Restore is guided and confirmation-based. It writes only into the configured
+  save folder, creates a pre-restore safety backup before overwriting matching
+  live files, and stops if that safety backup fails.
+- Backup files are never modified or deleted during restore. Zip restore points
+  are validated and extracted to a temporary folder first so unsafe paths are
+  blocked before anything is copied into the live save folder.
 - The only files the tool ever **deletes** are *old backup copies* inside the
   backup folder (retention), and only those matching the names it created.
   Milestone snapshots are never deleted.

@@ -5,8 +5,8 @@
 .DESCRIPTION
     A small, dark-themed window that automatically backs up your STALKER GAMMA /
     Anomaly saves while you play. Start/stop watching, run a one-time backup, take
-    a permanent milestone snapshot, change folders in Settings, see how to restore,
-    and minimise to the system tray - all without a terminal.
+    a permanent milestone snapshot, restore a selected backup, change folders in
+    Settings, and minimise to the system tray - all without a terminal.
 
     All real backup logic lives in 'backup-stalker-gamma-saves.ps1' (loaded here
     as a library). Settings are stored in 'stalker-gamma-backup-config.json'.
@@ -44,6 +44,15 @@ if (-not (Test-Path -LiteralPath $corePath)) {
     return
 }
 . $corePath -AsLibrary
+
+$restoreCorePath = Join-Path $scriptDir 'restore-stalker-gamma-saves.ps1'
+if (-not (Test-Path -LiteralPath $restoreCorePath)) {
+    [System.Windows.Forms.MessageBox]::Show(
+        "Could not find:`n$restoreCorePath`n`nKeep this app in the same folder as the restore helper.",
+        'STALKER GAMMA Save Backup', 'OK', 'Error') | Out-Null
+    return
+}
+. $restoreCorePath -AsLibrary
 
 # ---------------------------------------------------------------------------
 # Config (seed from example on first run, then load)
@@ -221,18 +230,18 @@ $btnToggle.TabIndex = 0
 $form.Controls.Add($btnToggle)
 
 # --- Secondary actions ---
-$btnNow  = New-Button 'Backup Now'                 16  330 158 42 $cCard $cText
-$btnMile = New-Button "$symFlag  Take Milestone"   186 330 158 42 $cBlue $cWhite
-$btnOpen = New-Button 'Open Folder'                356 330 158 42 $cCard $cText
-$btnSet  = New-Button "$symGear  Settings"         526 330 158 42 $cCard $cText
-$btnNow.TabIndex = 1; $btnMile.TabIndex = 2; $btnOpen.TabIndex = 3; $btnSet.TabIndex = 4
-$form.Controls.AddRange(@($btnNow, $btnMile, $btnOpen, $btnSet))
+$btnNow     = New-Button 'Backup Now'               16  330 124 42 $cCard $cText
+$btnMile    = New-Button "$symFlag  Milestone"      152 330 124 42 $cBlue $cWhite
+$btnRestore = New-Button 'Restore Backup'           288 330 124 42 $cAmber $cBlack
+$btnOpen    = New-Button 'Open Folder'              424 330 124 42 $cCard $cText
+$btnSet     = New-Button "$symGear  Settings"       560 330 124 42 $cCard $cText
+$btnNow.TabIndex = 1; $btnMile.TabIndex = 2; $btnRestore.TabIndex = 3; $btnOpen.TabIndex = 4; $btnSet.TabIndex = 5
+$form.Controls.AddRange(@($btnNow, $btnMile, $btnRestore, $btnOpen, $btnSet))
 
 # --- Activity header ---
 $lblAct    = New-Label 'ACTIVITY' 16 388 200 18 $cMuted $fBodyB
-$btnRestore = New-Button 'How to Restore' 482 384 120 26 $cCard $cText $fSmall
 $btnClear   = New-Button 'Clear'          614 384 70  26 $cCard $cMuted $fSmall
-$btnRestore.TabIndex = 5; $btnClear.TabIndex = 6
+$btnClear.TabIndex = 6
 
 # --- Activity log ---
 $log = New-Object System.Windows.Forms.RichTextBox
@@ -244,7 +253,7 @@ $log.Font = $fMono
 $log.BorderStyle = 'None'
 $log.HideSelection = $false
 $log.TabIndex = 7
-$form.Controls.AddRange(@($lblAct, $btnRestore, $btnClear, $log))
+$form.Controls.AddRange(@($lblAct, $btnClear, $log))
 
 # --- Footer ---
 $footer   = New-Panel 0 610 700 30 $cHeader
@@ -259,9 +268,9 @@ $form.Controls.Add($footer)
 $script:Tip.SetToolTip($btnToggle, 'Start or stop automatic backups. While watching, every new or changed save is copied the moment it appears.')
 $script:Tip.SetToolTip($btnNow,    'Back up all current saves once, right now.')
 $script:Tip.SetToolTip($btnMile,   'Take a permanent snapshot of all current saves. Milestones are never auto-deleted - ideal before a risky fight or for hardcore / Invictus runs.')
+$script:Tip.SetToolTip($btnRestore,'Choose a backup, review what will be restored, create a safety backup, then copy it back into the save folder.')
 $script:Tip.SetToolTip($btnOpen,   'Open the backup folder in Windows Explorer.')
 $script:Tip.SetToolTip($btnSet,    'Choose your save folder, backup folder and backup rules. No JSON editing needed.')
-$script:Tip.SetToolTip($btnRestore,'Step-by-step guide for putting a backed-up save back into the game.')
 $script:Tip.SetToolTip($btnClear,  'Clear the on-screen activity log (does not touch any files).')
 $script:Tip.SetToolTip($lblDrive,  'Status of the drive that holds your backup folder.')
 
@@ -603,66 +612,257 @@ function Show-SettingsDialog {
 }
 
 # ---------------------------------------------------------------------------
-# How-to-Restore help dialog
+# Restore dialog
 # ---------------------------------------------------------------------------
 function Show-RestoreDialog {
     $dlg = New-Object System.Windows.Forms.Form
-    $dlg.Text = 'How to restore a save'
-    $dlg.ClientSize = New-Object System.Drawing.Size(560, 466)
+    $dlg.Text = 'Restore Backup'
+    $dlg.ClientSize = New-Object System.Drawing.Size(820, 620)
     $dlg.StartPosition = 'CenterParent'
     $dlg.FormBorderStyle = 'FixedDialog'
     $dlg.MaximizeBox = $false; $dlg.MinimizeBox = $false
     $dlg.BackColor = $cBg; $dlg.Font = $fBody
     if ($form.Icon) { $dlg.Icon = $form.Icon }
 
-    $dlg.Controls.Add((New-Label 'Restoring a backed-up save' 20 16 520 24 $cAccent $fState))
-    $dlg.Controls.Add((New-Label 'This app never overwrites your saves for you - you stay in full control.' 20 46 520 16 $cMuted $fBody))
+    $dlg.Controls.Add((New-Label 'Restore Backup' 18 14 240 26 $cAccent $fState))
+    $dlg.Controls.Add((New-Label 'Choose backup -> review -> safety backup -> restore complete' 18 42 500 18 $cMuted $fBody))
 
-    $box = New-Object System.Windows.Forms.RichTextBox
-    $box.SetBounds(20, 74, 520, 332)
-    $box.ReadOnly = $true; $box.BorderStyle = 'None'
-    $box.BackColor = $cLogBg; $box.ForeColor = $cText; $box.Font = $fBody
-    $box.Text = @"
-1.  Close the game completely (STALKER must not be running).
+    $dlg.Controls.Add((New-Label 'Find save' 18 76 80 20 $cMuted $fBody))
+    $txtFilter = New-Object System.Windows.Forms.TextBox
+    $txtFilter.SetBounds(86, 73, 248, 24)
+    $txtFilter.BackColor = $cCardHi; $txtFilter.ForeColor = $cText; $txtFilter.BorderStyle = 'FixedSingle'
+    $dlg.Controls.Add($txtFilter)
 
-2.  Click "Open backup folder" below and find the save you want.
-    Newer backups have a later __YYYY-MM-DD_HH-mm-ss timestamp in the name.
+    $btnRefresh = New-Button 'Refresh' 346 70 90 28 $cCard $cText $fSmall
+    $btnOpen2 = New-Button 'Open Backup Folder' 448 70 150 28 $cCard $cText $fSmall
+    $dlg.Controls.AddRange(@($btnRefresh, $btnOpen2))
 
-3.  A full save is the matching .scop + .scoc pair with the SAME timestamp -
-    copy BOTH of them back together. The .dds file is just the thumbnail
-    (optional). Milestones are in the "Milestones" subfolder.
+    $list = New-Object System.Windows.Forms.ListView
+    $list.SetBounds(18, 110, 480, 426)
+    $list.View = 'Details'
+    $list.FullRowSelect = $true
+    $list.MultiSelect = $false
+    $list.HideSelection = $false
+    $list.BackColor = $cLogBg
+    $list.ForeColor = $cText
+    $list.BorderStyle = 'None'
+    [void]$list.Columns.Add('Save name', 130)
+    [void]$list.Columns.Add('Backup time', 128)
+    [void]$list.Columns.Add('Type', 72)
+    [void]$list.Columns.Add('Status', 88)
+    [void]$list.Columns.Add('Files', 44)
+    $dlg.Controls.Add($list)
 
-4.  If your backups are .zip files, extract the file(s) first.
+    $previewTitle = New-Label 'Review selected backup' 520 76 270 22 $cAccent $fBodyB
+    $preview = New-Object System.Windows.Forms.RichTextBox
+    $preview.SetBounds(520, 110, 282, 426)
+    $preview.ReadOnly = $true
+    $preview.BorderStyle = 'None'
+    $preview.BackColor = $cLogBg
+    $preview.ForeColor = $cText
+    $preview.Font = $fBody
+    $preview.Text = 'Select a backup on the left to see what will be restored.'
+    $dlg.Controls.AddRange(@($previewTitle, $preview))
 
-5.  Copy the file(s) into your savedgames folder (your "Save folder").
+    $lblResult = New-Label '' 18 548 514 28 $cMuted $fSmall
+    $btnRestoreSelected = New-Button 'Restore Selected' 538 552 142 36 $cAccent $cBlack
+    $btnClose = New-Button 'Close' 694 552 108 36 $cCard $cText
+    $btnRestoreSelected.Enabled = $false
+    $dlg.Controls.AddRange(@($lblResult, $btnRestoreSelected, $btnClose))
 
-6.  Remove the timestamp from each name (and any __002 collision suffix), for
-    example:
-        quicksave__2026-06-04_22-30-15.scop        ->   quicksave.scop
-        quicksave__2026-06-04_22-30-15__002.scoc   ->   quicksave.scoc
+    $script:RestoreDialogPoints = @()
 
-7.  Launch the game and load the save.
+    function Get-RestoreDialogSelection {
+        if ($list.SelectedItems.Count -eq 0) { return $null }
+        return $list.SelectedItems[0].Tag
+    }
 
-Tip: copying into the save folder does not affect your backups - they stay
-exactly where they are.
-"@
-    $dlg.Controls.Add($box)
+    function Get-RestoreDialogTimeText {
+        param([string] $Stamp)
+        try {
+            $dt = [datetime]::ParseExact($Stamp, 'yyyy-MM-dd_HH-mm-ss', [Globalization.CultureInfo]::InvariantCulture)
+            return $dt.ToString('yyyy-MM-dd HH:mm:ss')
+        }
+        catch {
+            return $Stamp
+        }
+    }
 
-    $btnOpen2 = New-Button 'Open backup folder' 20  420 180 32 $cCard   $cText
-    $btnClose = New-Button 'Close'              444 420 96  32 $cAccent $cBlack
-    $dlg.Controls.AddRange(@($btnOpen2, $btnClose))
+    function Update-RestorePreview {
+        $point = Get-RestoreDialogSelection
+        if (-not $point) {
+            $preview.ForeColor = $cText
+            $preview.Text = 'Select a backup on the left to see what will be restored.'
+            $btnRestoreSelected.Enabled = $false
+            return
+        }
+
+        $lines = @()
+        $lines += "Save: $($point.SaveName)"
+        $lines += "Backup: $(Get-RestoreDialogTimeText $point.Timestamp)"
+        $lines += "Type: $($point.Type)"
+        $lines += "Status: $($point.Status)"
+        if (-not $point.IsComplete) {
+            $lines += ''
+            $lines += 'This backup is missing the required .scop + .scoc pair.'
+            $lines += 'Restore is blocked for this backup.'
+        }
+        $lines += ''
+        $lines += 'Files to restore:'
+        foreach ($file in @($point.Files | Sort-Object Extension)) {
+            $dest = try { Get-RestoreDestinationPath -Config $script:Config -DestinationName $file.DestinationName } catch { Join-Path $script:Config.saveFolderPath $file.DestinationName }
+            $kind = if ($file.IsZip) { 'zip backup' } else { 'backup file' }
+            $lines += ("- {0} ({1:N0} bytes, {2})" -f $file.DestinationName, $file.Size, $kind)
+            $lines += "  From: $($file.SourcePath)"
+            $lines += "  To:   $dest"
+        }
+
+        $overwrites = @()
+        foreach ($file in @($point.Files)) {
+            try {
+                $dest = Get-RestoreDestinationPath -Config $script:Config -DestinationName $file.DestinationName
+                if (Test-Path -LiteralPath $dest -PathType Leaf) { $overwrites += $dest }
+            }
+            catch { }
+        }
+        $lines += ''
+        $lines += 'Live files that will be overwritten:'
+        if ($overwrites.Count -gt 0) {
+            foreach ($path in $overwrites) { $lines += "- $path" }
+        }
+        else {
+            $lines += '- None found right now.'
+        }
+
+        $safeName = $point.SaveName -replace '[^\w.\- ]', '_'
+        if ([string]::IsNullOrWhiteSpace($safeName)) { $safeName = 'save' }
+        $lines += ''
+        $lines += 'Pre-restore safety backup:'
+        $lines += (Join-Path (Join-Path $script:Config.backupFolderPath 'PreRestoreSafetyBackups') "yyyy-MM-dd_HH-mm-ss_restore_$safeName")
+        $lines += ''
+        $lines += 'Close the game before restoring. Backup files will not be modified or deleted.'
+
+        $preview.ForeColor = if ($point.IsComplete) { $cText } else { $cAmber }
+        $preview.Text = ($lines -join "`r`n")
+        $btnRestoreSelected.Enabled = [bool]$point.IsComplete
+    }
+
+    function Refresh-RestoreList {
+        $lblResult.ForeColor = $cMuted
+        $lblResult.Text = 'Scanning backups...'
+        [System.Windows.Forms.Application]::DoEvents()
+        $list.BeginUpdate()
+        try {
+            $list.Items.Clear()
+            $script:RestoreDialogPoints = @(Get-RestorePoints -Config $script:Config)
+            $filter = $txtFilter.Text.Trim()
+            $visible = @($script:RestoreDialogPoints | Where-Object {
+                -not $filter -or $_.SaveName.IndexOf($filter, [System.StringComparison]::OrdinalIgnoreCase) -ge 0
+            })
+            foreach ($point in $visible) {
+                $item = New-Object System.Windows.Forms.ListViewItem($point.SaveName)
+                [void]$item.SubItems.Add((Get-RestoreDialogTimeText $point.Timestamp))
+                [void]$item.SubItems.Add($point.Type)
+                [void]$item.SubItems.Add($point.Status)
+                [void]$item.SubItems.Add([string]$point.FileCount)
+                $item.Tag = $point
+                if (-not $point.IsComplete) { $item.ForeColor = $cAmber }
+                [void]$list.Items.Add($item)
+            }
+            $lblResult.Text = if ($visible.Count -eq 1) { 'Found 1 restore point.' } else { "Found $($visible.Count) restore points." }
+            if ($list.Items.Count -gt 0) { $list.Items[0].Selected = $true }
+            Update-RestorePreview
+        }
+        catch {
+            $lblResult.ForeColor = $cRed
+            $lblResult.Text = "Could not scan backups: $($_.Exception.Message)"
+            $preview.ForeColor = $cRed
+            $preview.Text = $lblResult.Text
+            $btnRestoreSelected.Enabled = $false
+        }
+        finally {
+            $list.EndUpdate()
+        }
+    }
+
+    $txtFilter.Add_TextChanged({ Refresh-RestoreList })
+    $list.Add_SelectedIndexChanged({ Update-RestorePreview })
+    $btnRefresh.Add_Click({ Refresh-RestoreList })
     $btnOpen2.Add_Click({
         try {
             if (Test-Path -LiteralPath $script:Config.backupFolderPath) {
                 Start-Process explorer.exe -ArgumentList $script:Config.backupFolderPath
             } else {
-                [System.Windows.Forms.MessageBox]::Show('Backup folder is not available (is the drive connected?).', 'Restore', 'OK', 'Warning') | Out-Null
+                [System.Windows.Forms.MessageBox]::Show('Backup folder is not available (is the drive connected?).', 'Restore Backup', 'OK', 'Warning') | Out-Null
             }
         } catch { }
     })
+
+    $btnRestoreSelected.Add_Click({
+        $point = Get-RestoreDialogSelection
+        if (-not $point) { return }
+        $running = @(Get-RunningGameProcessNames)
+        $gameLine = if ($running.Count -gt 0) {
+            "The game may be running: $($running -join ', '). Close it before restoring."
+        }
+        else {
+            'Close the game completely before restoring.'
+        }
+        $confirmText = @"
+$gameLine
+
+The selected backup will be copied into your live save folder.
+Existing matching live files will be overwritten.
+Anomaly Save Guardian will first create a pre-restore safety backup.
+No backup files will be modified or deleted.
+
+Restore "$($point.SaveName)" from $($point.Type) backup $($point.Timestamp)?
+"@
+        $answer = [System.Windows.Forms.MessageBox]::Show(
+            $confirmText,
+            'Confirm restore',
+            [System.Windows.Forms.MessageBoxButtons]::YesNo,
+            [System.Windows.Forms.MessageBoxIcon]::Warning)
+        if ($answer -ne [System.Windows.Forms.DialogResult]::Yes) {
+            $lblResult.ForeColor = $cMuted
+            $lblResult.Text = 'Restore cancelled.'
+            return
+        }
+
+        $btnRestoreSelected.Enabled = $false
+        $btnRefresh.Enabled = $false
+        $lblResult.ForeColor = $cMuted
+        $lblResult.Text = 'Creating safety backup and restoring...'
+        [System.Windows.Forms.Application]::DoEvents()
+        try {
+            $result = Invoke-RestorePoint -Config $script:Config -RestorePoint $point -Confirmed
+            $lblResult.ForeColor = $cAccent
+            $lblResult.Text = "Restore complete. Safety backup: $($result.SafetyBackupFolder)"
+            Write-Log "Restore complete for '$($point.SaveName)'. Safety backup: $($result.SafetyBackupFolder)" 'SUCCESS'
+            [System.Windows.Forms.MessageBox]::Show(
+                "Restore complete.`n`nSafety backup created at:`n$($result.SafetyBackupFolder)`n`nYou can now start the game and load the save.",
+                'Restore complete', 'OK', 'Information') | Out-Null
+            Refresh-RestoreList
+        }
+        catch {
+            $lblResult.ForeColor = $cRed
+            $lblResult.Text = "Restore failed: $($_.Exception.Message)"
+            Write-Log "Restore failed: $($_.Exception.Message)" 'ERROR'
+            [System.Windows.Forms.MessageBox]::Show(
+                "Restore failed:`n`n$($_.Exception.Message)`n`nNo backup files were modified or deleted.",
+                'Restore failed', 'OK', 'Error') | Out-Null
+            Update-RestorePreview
+        }
+        finally {
+            $btnRefresh.Enabled = $true
+            $btnRestoreSelected.Enabled = [bool]((Get-RestoreDialogSelection) -and (Get-RestoreDialogSelection).IsComplete)
+        }
+    })
+
     $btnClose.Add_Click({ $dlg.Close() })
     $dlg.AcceptButton = $btnClose
     $dlg.CancelButton = $btnClose
+    Refresh-RestoreList
     [void]$dlg.ShowDialog($form)
     $dlg.Dispose()
 }
