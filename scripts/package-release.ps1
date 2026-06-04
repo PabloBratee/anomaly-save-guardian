@@ -43,6 +43,8 @@ $include = @(
     'stalker-gamma-backup-ui.ps1',
     'stalker-gamma-backup-config.example.json',
     'stalker-gamma-backup.ico',
+    'Launch STALKER GAMMA Save Backup.cmd',
+    'Create-Desktop-Shortcut.ps1',
     'README.md',
     'CHANGELOG.md',
     'LICENSE'

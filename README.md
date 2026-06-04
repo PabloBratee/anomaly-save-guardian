@@ -76,9 +76,29 @@ Built entirely on **built-in PowerShell / .NET** — nothing to install.
 > ```
 > See [Troubleshooting](#troubleshooting).
 
+### Launch it like an app
+
+The folder ships with a double-clickable launcher so you don't have to touch
+PowerShell:
+
+- **`Launch STALKER GAMMA Save Backup.cmd`** — just double-click it. It finds
+  its own folder, so it works wherever you put the files, and starts the app
+  with no console window.
+
 ### Create a desktop shortcut
 
-Right-click your Desktop → **New → Shortcut**, and use:
+Easiest — run the included helper once from the app folder (double-click it):
+
+```
+Create-Desktop-Shortcut.ps1
+```
+
+It drops a proper **STALKER GAMMA Save Backup** shortcut on your Desktop, icon
+and all, pointing at this folder. (If Windows blocks it, right-click → **Run
+with PowerShell**, or use the bypass command in
+[Troubleshooting](#troubleshooting).)
+
+Prefer to do it by hand? Right-click your Desktop → **New → Shortcut**, and use:
 
 ```
 powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "FULL\PATH\TO\stalker-gamma-backup-ui.ps1"
