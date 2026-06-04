@@ -257,7 +257,7 @@ $form.Controls.AddRange(@($lblAct, $btnClear, $log))
 
 # --- Footer ---
 $footer   = New-Panel 0 610 700 30 $cHeader
-$lblFoot  = New-Label '' 16 7 430 16 $cFaint $fSmall
+$lblFoot  = New-Label 'Created by GAM33RSFR33AK' 16 7 430 16 $cFaint $fSmall
 $lblFootR = New-Label 'Originals are never modified' 454 7 230 16 $cFaint $fSmall 'TopRight'
 $footer.Controls.AddRange(@($lblFoot, $lblFootR))
 $form.Controls.Add($footer)

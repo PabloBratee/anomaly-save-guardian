@@ -7,6 +7,8 @@ crash, or a corrupt save never costs you a run.
 
 Built entirely on **built-in PowerShell / .NET** — nothing to install.
 
+Created by GAM33RSFR33AK.
+
 ![The STALKER GAMMA Save Backup app, watching and backing up saves](screenshot.png)
 
 > **🛡️ Safe by design:** automatic backups only read and copy your original
@@ -366,6 +368,8 @@ issues.
 
 Want to publish or grab a clean download?
 
+- First public release: **v1.0.0**
+- Release ZIP: `STALKER-GAMMA-Save-Backup-v1.0.0.zip`
 - **For users:** download the latest `.zip` from the
   [Releases page](https://github.com/PabloBratee/anomaly-save-guardian/releases),
   extract it anywhere, and follow [Quick start](#quick-start).
@@ -374,9 +378,14 @@ Want to publish or grab a clean download?
   ```powershell
   .\scripts\package-release.ps1
   ```
-  This creates `dist\STALKER-GAMMA-Save-Backup-vX.Y.Z.zip` and prints the exact
-  steps to tag and publish a GitHub Release. The `dist\` folder is git-ignored.
-  For the full v1.1.0 checklist, see
+  This creates `dist\STALKER-GAMMA-Save-Backup-v1.0.0.zip` and prints the exact
+  steps to tag and publish a GitHub Release:
+  ```powershell
+  git push origin main
+  git tag v1.0.0
+  git push origin v1.0.0
+  ```
+  The `dist\` folder is git-ignored. For the full v1.0.0 checklist, see
   [docs/release-checklist.md](docs/release-checklist.md).
 
 ---

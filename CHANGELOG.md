@@ -3,10 +3,14 @@
 All notable changes to this project are documented here. This project follows
 [Semantic Versioning](https://semver.org/).
 
-## [1.1.0] - 2026-06-04
+## [1.0.0] - 2026-06-04
 
-A UX, restore and public-readiness release. No changes to the backup config
-format — your existing `stalker-gamma-backup-config.json` keeps working.
+First public release of STALKER GAMMA Save Backup. A polished, dependency-free
+Windows PowerShell / .NET WinForms app for automatically backing up and safely
+restoring S.T.A.L.K.E.R. Anomaly / GAMMA save files.
+
+No changes to the backup config format are expected from earlier local builds;
+your existing `stalker-gamma-backup-config.json` keeps working.
 
 ### Added
 - **Guided first-run welcome** that explains setup in three steps and reassures
@@ -33,6 +37,19 @@ format — your existing `stalker-gamma-backup-config.json` keeps working.
   the files users need (git-ignored `dist/`).
 - Community files: `CONTRIBUTING.md`, `SECURITY.md`, issue templates and a pull
   request template.
+- Automatic backup engine (`backup-stalker-gamma-saves.ps1`) with watch,
+  one-time, milestone and dry-run modes.
+- Desktop GUI (`stalker-gamma-backup-ui.ps1`) with a dark theme, live activity
+  log, and a double-click launcher.
+- **Settings dialog** to change save / backup / milestone / log folders,
+  extensions, retention, delay and zip mode without editing JSON.
+- **System tray** support: minimise or close (X) to tray, double-click to
+  restore, right-click menu, and a true Exit.
+- **Milestone snapshots** that are never removed by retention - ideal for
+  hardcore / Invictus runs.
+- Timestamped, append-only backups (`name__YYYY-MM-DD_HH-mm-ss.ext`); originals
+  are only ever read, never modified.
+- First-run config seeding from `stalker-gamma-backup-config.example.json`.
 
 ### Changed
 - **Redesigned main window**: polished header, accent status strip, clearer
@@ -69,22 +86,4 @@ format — your existing `stalker-gamma-backup-config.json` keeps working.
 - Automatic backup still only reads and copies original saves.
 - Added safe fake-save release tests for backup copying, retention, milestones,
   config errors, extension filtering, zip mode and guided restore behavior.
-
-## [1.0.0] - 2026-06-04
-
-### Added
-- Automatic backup engine (`backup-stalker-gamma-saves.ps1`) with watch,
-  one-time, milestone and dry-run modes.
-- Desktop GUI (`stalker-gamma-backup-ui.ps1`) with a dark theme, live activity
-  log, and a desktop shortcut launcher.
-- **Settings dialog** to change save / backup / milestone / log folders,
-  extensions, retention, delay and zip mode without editing JSON.
-- **System tray** support: minimise or close (X) to tray, double-click to
-  restore, right-click menu, and a true Exit.
-- **Milestone snapshots** that are never removed by retention - ideal for
-  hardcore / Invictus runs.
-- Timestamped, append-only backups (`name__YYYY-MM-DD_HH-mm-ss.ext`); originals
-  are only ever read, never modified.
-- Per-save retention, optional `.zip` backups, robust handling of locked files
-  and an unavailable backup drive.
-- First-run config seeding from `stalker-gamma-backup-config.example.json`.
+- Created by GAM33RSFR33AK.

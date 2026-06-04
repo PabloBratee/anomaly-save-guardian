@@ -1,11 +1,11 @@
 # Release Checklist
 
-Use this checklist to publish `v1.1.0`.
+Use this checklist to publish the first public release, `v1.0.0`.
 
 ## Pre-release
 
-- Confirm `CHANGELOG.md` has the final `1.1.0` notes.
-- Confirm `backup-stalker-gamma-saves.ps1` reports `$script:AppVersion = '1.1.0'`.
+- Confirm `CHANGELOG.md` has the final `1.0.0` notes.
+- Confirm `backup-stalker-gamma-saves.ps1` reports `$script:AppVersion = '1.0.0'`.
 - Run syntax and release tests:
   ```powershell
   .\scripts\check-syntax.ps1
@@ -17,7 +17,7 @@ Use this checklist to publish `v1.1.0`.
   ```powershell
   .\scripts\package-release.ps1
   ```
-- Inspect `dist\STALKER-GAMMA-Save-Backup-v1.1.0.zip` before uploading.
+- Inspect `dist\STALKER-GAMMA-Save-Backup-v1.0.0.zip` before uploading.
 - Confirm the zip contains `restore-stalker-gamma-saves.ps1` and does not
   contain personal config, logs, temp folders, `.git`, `.github`, tests or a
   nested `dist` folder.
@@ -28,15 +28,15 @@ After the final release-readiness changes are committed on local `main`, run:
 
 ```powershell
 git push origin main
-git tag v1.1.0
-git push origin v1.1.0
+git tag v1.0.0
+git push origin v1.0.0
 ```
 
 Then create a GitHub Release:
 
-- Tag: `v1.1.0`
-- Title: `v1.1.0`
-- Notes: paste the `CHANGELOG.md` section for `1.1.0`
-- Asset: `dist\STALKER-GAMMA-Save-Backup-v1.1.0.zip`
+- Tag: `v1.0.0`
+- Title: `v1.0.0`
+- Notes: paste the `CHANGELOG.md` section for `1.0.0`
+- Asset: `dist\STALKER-GAMMA-Save-Backup-v1.0.0.zip`
 
 Do not attach personal config, logs, temp folders, or any real save files.
