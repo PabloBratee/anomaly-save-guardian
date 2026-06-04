@@ -53,8 +53,10 @@ your existing `stalker-gamma-backup-config.json` keeps working.
   restore, right-click menu, and a true Exit.
 - **Milestone snapshots** that are never removed by retention - ideal for
   hardcore / Invictus runs.
-- Timestamped, append-only backups (`name__YYYY-MM-DD_HH-mm-ss.ext`); originals
-  are only ever read, never modified.
+- **Logical save grouping**: `.scop` + `.scoc` are treated as the required save
+  pair, with optional `.dds` thumbnails grouped into the same restore point.
+- Rolling backups use minute-precision names (`name__YYYY-MM-DD_HH-mm.ext`) and
+  always read/copy originals without modifying live saves.
 - First-run config seeding from `stalker-gamma-backup-config.example.json`.
 
 ### Changed
@@ -68,10 +70,12 @@ your existing `stalker-gamma-backup-config.json` keeps working.
   layout never breaks.
 - Settings now clears the in-memory backup cache after a save, so changed paths
   take effect immediately.
-- Rolling retention now keeps the latest grouped restore points total instead
-  of counting individual files. The default is 10 restore points, `.scop` /
-  `.scoc` / optional `.dds` stay together, and milestones plus pre-restore
-  safety backups are kept separately.
+- Rolling backups now replace the previous backup for the same logical save name
+  instead of accumulating endless timestamped copies of the same quicksave,
+  autosave, sleep save, or manual save. The default cap is 10 distinct logical
+  saves; milestones and pre-restore safety backups are kept separately.
+- Zip mode now stores one complete logical save group per `.zip`, with `.scop`,
+  `.scoc` and optional `.dds` together.
 - Rapid manual backups or milestones that land in the same second now get a
   `__002`-style suffix instead of overwriting an existing backup with the same
   timestamp.
@@ -89,9 +93,11 @@ your existing `stalker-gamma-backup-config.json` keeps working.
 
 ### Notes
 - Still 100% built-in PowerShell / .NET — no dependencies.
-- Automatic backup still only reads and copies original saves.
-- Added safe fake-save release tests for backup copying, retention, milestones,
-  config errors, extension filtering, zip mode and guided restore behavior.
+- Automatic backup still only reads and copies original saves; it never deletes
+  or modifies live savedgames.
+- Added safe fake-save release tests for logical save grouping, rolling
+  replacement, retention, milestones, config errors, extension filtering, grouped
+  zip mode and guided restore behavior.
 - Release ZIP: `Anomaly-Save-Guardian-v1.0.0.zip`.
 - SHA256: published on the
   [v1.0.0 release page](https://github.com/PabloBratee/anomaly-save-guardian/releases/tag/v1.0.0).

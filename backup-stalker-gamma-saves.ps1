@@ -60,7 +60,17 @@ $ErrorActionPreference = 'Stop'
 # ---------------------------------------------------------------------------
 $script:AppVersion  = '1.0.0'        # bumped in CHANGELOG.md
 $script:Config      = $null          # normalized config object
-$script:BackupCache = @{}            # path -> "lastWriteTicks|length" of last backup made
+$script:BackupCache = @{}            # saveName -> group signature of last backup made
+
+# A logical save = one .scop + one .scoc, plus an optional .dds thumbnail, all
+# sharing the same base file name. .scop + .scoc are REQUIRED for a complete
+# save; .dds is optional. These drive grouping and "complete" checks.
+$script:RequiredSaveExtensions = @('.scop', '.scoc')
+
+# Timestamp pattern shared by the filename parsers. Seconds are optional so both
+# new minute-precision rolling backups (yyyy-MM-dd_HH-mm) and older / milestone
+# second-precision names (yyyy-MM-dd_HH-mm-ss) are recognized.
+$script:BackupTimestampPattern = '\d{4}-\d{2}-\d{2}_\d{2}-\d{2}(?:-\d{2})?'
 
 # ===========================================================================
 # Logging
@@ -332,10 +342,12 @@ function Copy-SaveFile {
     return $false
 }
 
-# Create a timestamped .zip containing the single save file. Source is read-only.
-function New-ZipBackup {
+# Create a timestamped .zip containing every file of ONE logical save group
+# (.scop + .scoc + optional .dds). One zip == one save. Sources are read-only and
+# stored under their original live file names so restore can extract them back.
+function New-ZipBackupGroup {
     param(
-        [Parameter(Mandatory)] [string] $Source,
+        [Parameter(Mandatory)] [string[]] $Sources,
         [Parameter(Mandatory)] [string] $DestinationZip
     )
     try {
@@ -348,8 +360,10 @@ function New-ZipBackup {
         }
         $zip = [System.IO.Compression.ZipFile]::Open($DestinationZip, [System.IO.Compression.ZipArchiveMode]::Create)
         try {
-            [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
-                $zip, $Source, [System.IO.Path]::GetFileName($Source)) | Out-Null
+            foreach ($source in $Sources) {
+                [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+                    $zip, $source, [System.IO.Path]::GetFileName($source)) | Out-Null
+            }
         }
         finally {
             $zip.Dispose()
@@ -357,17 +371,142 @@ function New-ZipBackup {
         return $true
     }
     catch [System.UnauthorizedAccessException] {
-        Write-Log "Permission denied creating zip for '$Source': $($_.Exception.Message)" 'ERROR'
+        Write-Log "Permission denied creating zip for '$DestinationZip': $($_.Exception.Message)" 'ERROR'
         return $false
     }
     catch {
-        Write-Log "Zip backup failed for '$Source': $($_.Exception.Message)" 'ERROR'
+        Write-Log "Zip backup failed for '$DestinationZip': $($_.Exception.Message)" 'ERROR'
         return $false
     }
 }
 
+# Discover the logical save groups in a folder. Files are grouped by base name
+# (the file name without its extension) so '<name>.scop', '<name>.scoc' and
+# '<name>.dds' are treated as ONE save named '<name>'. Only configured
+# includeExtensions participate. Returns objects: SaveName, Files, IsComplete.
+function Get-LiveSaveGroups {
+    param([Parameter(Mandatory)] [string] $Folder)
+
+    $groups = [ordered]@{}
+    $files = @(Get-ChildItem -LiteralPath $Folder -File -ErrorAction Stop |
+               Where-Object { $script:Config.includeExtensions -contains $_.Extension.ToLowerInvariant() })
+    foreach ($file in $files) {
+        $base = [System.IO.Path]::GetFileNameWithoutExtension($file.Name)
+        if ([string]::IsNullOrWhiteSpace($base)) { continue }
+        $key = $base.ToLowerInvariant()
+        if (-not $groups.Contains($key)) {
+            $groups[$key] = [PSCustomObject]@{ SaveName = $base; Files = @() }
+        }
+        $groups[$key].Files = @($groups[$key].Files + $file)
+    }
+
+    foreach ($key in $groups.Keys) {
+        $group = $groups[$key]
+        Add-Member -InputObject $group -NotePropertyName IsComplete -NotePropertyValue (Test-SaveGroupComplete -Files $group.Files) -Force
+        $group
+    }
+}
+
+# A group is complete when every REQUIRED extension that the user actually backs
+# up is present. If neither .scop nor .scoc is in includeExtensions (a custom
+# setup), there is no pair to require and any group counts as complete.
+function Test-SaveGroupComplete {
+    param([Parameter(Mandatory)] [System.IO.FileInfo[]] $Files)
+    $exts = @($Files | ForEach-Object { $_.Extension.ToLowerInvariant() })
+    $requiredConfigured = @($script:RequiredSaveExtensions | Where-Object { $script:Config.includeExtensions -contains $_ })
+    if ($requiredConfigured.Count -eq 0) { return $true }
+    foreach ($required in $requiredConfigured) {
+        if ($exts -notcontains $required) { return $false }
+    }
+    return $true
+}
+
+# A stable fingerprint of a save group (sorted name|ticks|length per file) used to
+# skip re-backing up a group that has not changed since the last successful backup.
+function Get-SaveGroupSignature {
+    param([Parameter(Mandatory)] [System.IO.FileInfo[]] $Files)
+    $parts = @($Files | Sort-Object Name | ForEach-Object {
+        "{0}|{1}|{2}" -f $_.Name, $_.LastWriteTimeUtc.Ticks, $_.Length
+    })
+    return ($parts -join '||')
+}
+
+# Compute a collision-safe suffix so a whole group keeps one shared timestamp
+# token. Used by milestones (which keep permanent snapshot names). Rolling
+# backups overwrite/replace by save name instead, so they pass no suffix.
+function Get-UniqueGroupSuffix {
+    param(
+        [Parameter(Mandatory)] [string] $DestFolder,
+        [Parameter(Mandatory)] [string] $SaveName,
+        [Parameter(Mandatory)] [string] $Timestamp,
+        [Parameter(Mandatory)] [string[]] $Extensions,
+        [switch] $Zip
+    )
+    $exists = {
+        param($suffix)
+        if ($Zip) {
+            return (Test-Path -LiteralPath (Join-Path $DestFolder ("{0}__{1}{2}.zip" -f $SaveName, $Timestamp, $suffix)))
+        }
+        foreach ($ext in $Extensions) {
+            if (Test-Path -LiteralPath (Join-Path $DestFolder ("{0}__{1}{2}{3}" -f $SaveName, $Timestamp, $suffix, $ext))) { return $true }
+        }
+        return $false
+    }
+    if (-not (& $exists '')) { return '' }
+    for ($i = 2; $i -le 9999; $i++) {
+        $suffix = "__{0:D3}" -f $i
+        if (-not (& $exists $suffix)) { return $suffix }
+    }
+    throw "Could not create a unique backup name for '$SaveName' in '$DestFolder'."
+}
+
+# Write ONE logical save group to a destination folder under a shared timestamp.
+# Zip mode -> a single '<save>__<timestamp>.zip' holding every file.
+# Plain mode -> '<save>__<timestamp><ext>' per file (shared timestamp keeps the
+# group together for restore). Returns the full paths written, or $null on failure.
+function New-SaveGroupBackup {
+    param(
+        [Parameter(Mandatory)] [string] $SaveName,
+        [Parameter(Mandatory)] [System.IO.FileInfo[]] $Files,
+        [Parameter(Mandatory)] [string] $DestFolder,
+        [Parameter(Mandatory)] [string] $Timestamp,
+        [switch] $UniqueCollision
+    )
+    $sorted = @($Files | Sort-Object Name)
+    $exts = @($sorted | ForEach-Object { $_.Extension.ToLowerInvariant() })
+    $suffix = ''
+    if ($UniqueCollision) {
+        $suffix = Get-UniqueGroupSuffix -DestFolder $DestFolder -SaveName $SaveName -Timestamp $Timestamp -Extensions $exts -Zip:([bool]$script:Config.enableZipBackup)
+    }
+
+    if ($script:Config.enableZipBackup) {
+        $zipPath = Join-Path $DestFolder ("{0}__{1}{2}.zip" -f $SaveName, $Timestamp, $suffix)
+        if (New-ZipBackupGroup -Sources @($sorted | ForEach-Object { $_.FullName }) -DestinationZip $zipPath) {
+            return @($zipPath)
+        }
+        return $null
+    }
+
+    $written = @()
+    foreach ($file in $sorted) {
+        $ext = $file.Extension.ToLowerInvariant()
+        $dest = Join-Path $DestFolder ("{0}__{1}{2}{3}" -f $SaveName, $Timestamp, $suffix, $ext)
+        if (Copy-SaveFile -Source $file.FullName -Destination $dest) {
+            $written += $dest
+        }
+        else {
+            # Roll back any partial group write so we never leave a half-saved set.
+            foreach ($done in $written) {
+                Remove-Item -LiteralPath $done -Force -ErrorAction SilentlyContinue
+            }
+            return $null
+        }
+    }
+    return $written
+}
+
 # Return the requested backup path, or a suffixed sibling if that exact timestamp
-# already exists. This keeps backups append-only even for rapid manual actions.
+# already exists. Used for compatibility tests and collision-safe snapshot names.
 function Get-UniqueBackupPath {
     param([Parameter(Mandatory)] [string] $DestinationPath)
 
@@ -416,16 +555,30 @@ function Get-RollingBackupFileInfoFromName {
 
     $name = $File.Name
     $isZip = $false
+    $ext = $null
+
     if ($name.ToLowerInvariant().EndsWith('.zip')) {
         $isZip = $true
-        $name = [System.IO.Path]::GetFileNameWithoutExtension($name)
+        $core = [System.IO.Path]::GetFileNameWithoutExtension($name)   # strip .zip
+        # Legacy zips were '<save>__<ts>.<ext>.zip'; new grouped zips are
+        # '<save>__<ts>.zip' (no inner save extension). Detect which we have.
+        $inner = [System.IO.Path]::GetExtension($core).ToLowerInvariant()
+        if ($inner -and ($script:Config.includeExtensions -contains $inner)) {
+            $ext = $inner
+            $core = [System.IO.Path]::GetFileNameWithoutExtension($core)
+        }
+        else {
+            $ext = '.zip'   # grouped zip: the whole save is in one archive
+        }
+    }
+    else {
+        $ext = [System.IO.Path]::GetExtension($name).ToLowerInvariant()
+        if ($script:Config.includeExtensions -notcontains $ext) { return $null }
+        $core = [System.IO.Path]::GetFileNameWithoutExtension($name)
     }
 
-    $match = [regex]::Match($name, '^(?<save>.+)__(?<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})(?:__(?<collision>\d{3,4}))?(?<ext>\.[^.\\/:]+)$')
+    $match = [regex]::Match($core, ('^(?<save>.+)__(?<timestamp>{0})(?:__(?<collision>\d{{3,4}}))?$' -f $script:BackupTimestampPattern))
     if (-not $match.Success) { return $null }
-
-    $ext = $match.Groups['ext'].Value.ToLowerInvariant()
-    if ($script:Config.includeExtensions -notcontains $ext) { return $null }
 
     $saveName = $match.Groups['save'].Value
     if ([string]::IsNullOrWhiteSpace($saveName)) { return $null }
@@ -493,8 +646,8 @@ function Test-RetentionFileProtected {
     return @($script:RetentionProtectedPaths) -contains $fullPath
 }
 
-# Retention: keep only the newest N grouped rolling restore points in the top
-# level of the backup folder and delete older groups as a unit. Conservative +
+# Retention: keep only the newest N logical saves in the top level of the backup
+# folder and delete older groups as a unit. Conservative +
 # scoped to the configured rolling backup folder only. NEVER touches the save
 # folder, milestone folder, pre-restore safety folders, logs or config.
 function Invoke-Retention {
@@ -542,77 +695,138 @@ function Invoke-Retention {
     }
 }
 
-# Back up a single file (the core routine used by both manual and watch modes).
-# StabilityAttempts controls how many times we wait/retry for a file to settle.
-# The GUI poller passes 1 (it just retries on the next poll) to stay responsive.
-function Invoke-BackupForFile {
+# Normal rolling backups keep only the NEWEST backup for each logical save name.
+# After a fresh rolling backup, remove every other top-level rolling file with the
+# same save name so the same quicksave/autosave/sleep/manual save never piles up
+# endless timestamped copies. Strictly scoped to the configured rolling backup
+# folder's top level: it never touches the save folder, the Milestones folder, the
+# PreRestoreSafetyBackups subfolder, or anything outside the backup folder.
+function Invoke-RollingReplacement {
     param(
-        [Parameter(Mandatory)] [string] $FilePath,
+        [Parameter(Mandatory)] [string] $SaveName,
+        [Parameter(Mandatory)] [string[]] $KeepPaths
+    )
+    try {
+        $folder = $script:Config.backupFolderPath
+        if (-not (Test-Path -LiteralPath $folder)) { return }
+        $keep = @{}
+        foreach ($p in $KeepPaths) { $keep[(Get-FullBackupPath $p).ToLowerInvariant()] = $true }
+
+        $points = @(Get-RollingBackupRestorePoints -Folder $folder)
+        foreach ($point in $points) {
+            if ($point.SaveName -ine $SaveName) { continue }
+            foreach ($file in @($point.Files)) {
+                $full = (Get-FullBackupPath $file.SourcePath).ToLowerInvariant()
+                if ($keep.ContainsKey($full)) { continue }   # the backup we just wrote
+                if (-not (Test-PathInsideBackupFolder -Path $file.SourcePath -Folder $folder)) { continue }
+                if (Test-RetentionFileProtected -Path $file.SourcePath) {
+                    Write-Log "Skipped rolling replacement for active restore source '$($file.SourcePath)'" 'WARN'
+                    continue
+                }
+                if ($DryRun) {
+                    Write-Log "[DRY-RUN] Would replace older rolling backup '$($file.SourcePath)'" 'DRYRUN'
+                    continue
+                }
+                try {
+                    Remove-Item -LiteralPath $file.SourcePath -Force
+                    Write-Log "Replaced older rolling backup '$($file.SourcePath)'"
+                }
+                catch {
+                    Write-Log "Failed to replace older rolling backup '$($file.SourcePath)': $($_.Exception.Message)" 'WARN'
+                }
+            }
+        }
+    }
+    catch {
+        Write-Log "Rolling replacement error: $($_.Exception.Message)" 'WARN'
+    }
+}
+
+# Back up ONE logical save group (the core routine used by manual and watch
+# modes). When any file of a save changes, the whole group is re-scanned by base
+# name so the matching .scop + .scoc (+ optional .dds) are always backed up
+# together as a single restore point. StabilityAttempts controls how many times we
+# wait/retry for the files to settle. The GUI poller passes 1 (it retries on the
+# next poll) to stay responsive.
+function Invoke-BackupGroup {
+    param(
+        [Parameter(Mandatory)] [string] $SaveName,
         [int] $StabilityAttempts = 5
     )
 
-    # Extension filter
-    $ext = [System.IO.Path]::GetExtension($FilePath).ToLowerInvariant()
-    if ($script:Config.includeExtensions -notcontains $ext) { return }
-
-    # File may have vanished between event and processing
-    if (-not (Test-Path -LiteralPath $FilePath)) { return }
+    # Re-scan the live folder for every file in this logical save group.
+    $folder = $script:Config.saveFolderPath
+    try {
+        $groupFiles = @(Get-ChildItem -LiteralPath $folder -File -ErrorAction Stop | Where-Object {
+            ($script:Config.includeExtensions -contains $_.Extension.ToLowerInvariant()) -and
+            ([System.IO.Path]::GetFileNameWithoutExtension($_.Name) -ieq $SaveName)
+        })
+    }
+    catch {
+        return
+    }
+    if ($groupFiles.Count -eq 0) { return }
 
     # Backup drive must be available (skipped for dry-run, which writes nothing).
     if (-not $DryRun -and -not (Test-BackupTargetAvailable)) {
-        Write-Log "Backup target/drive unavailable; skipping '$FilePath'. (Is the backup drive connected?)" 'ERROR'
+        Write-Log "Backup target/drive unavailable; skipping '$SaveName'. (Is the backup drive connected?)" 'ERROR'
         return
     }
 
-    # Debounce / duplicate-protection: skip if this exact version was already backed up.
-    try {
-        $item = Get-Item -LiteralPath $FilePath
-    }
-    catch {
-        return  # file disappeared
-    }
-    $signature = "$($item.LastWriteTimeUtc.Ticks)|$($item.Length)"
-    if ($script:BackupCache.ContainsKey($FilePath) -and $script:BackupCache[$FilePath] -eq $signature) {
+    # Never replace a complete backup with a partial write: if the game is still
+    # writing the pair (only .scop or only .scoc present so far), wait for the
+    # sibling on a later pass instead of backing up an incomplete save.
+    if (-not (Test-SaveGroupComplete -Files $groupFiles)) {
+        if ($StabilityAttempts -gt 1) {
+            Write-Log "Save '$SaveName' is still being written (incomplete pair); will retry." 'WARN'
+        }
         return
     }
 
-    # Wait until the file is fully written (stable size + not locked), with retries.
+    # Duplicate-protection: skip if this exact version of the group was already backed up.
+    $signature = Get-SaveGroupSignature -Files $groupFiles
+    if ($script:BackupCache.ContainsKey($SaveName) -and $script:BackupCache[$SaveName] -eq $signature) {
+        return
+    }
+
+    # Wait until every file in the group is fully written (stable + unlocked).
     $ready = $false
     for ($attempt = 1; $attempt -le $StabilityAttempts; $attempt++) {
-        if (Test-FileReady $FilePath) { $ready = $true; break }
+        $allReady = $true
+        foreach ($file in $groupFiles) {
+            if (-not (Test-FileReady $file.FullName)) { $allReady = $false; break }
+        }
+        if ($allReady) { $ready = $true; break }
         if ($StabilityAttempts -gt 1) {
-            Write-Log "File not ready (locked or still being written): '$FilePath' (attempt $attempt/$StabilityAttempts)" 'WARN'
+            Write-Log "Save group not ready yet (locked or still being written): '$SaveName' (attempt $attempt/$StabilityAttempts)" 'WARN'
         }
         if ($attempt -lt $StabilityAttempts) { Start-Sleep -Seconds 1 }
     }
     if (-not $ready) {
-        Write-Log "File not ready yet (locked/still saving); will retry: '$FilePath'" 'WARN'
+        Write-Log "Save group not ready yet (locked/still saving); will retry: '$SaveName'" 'WARN'
         return
     }
 
-    # Recompute signature now that the file is stable.
+    # Re-scan once more now that files are stable (sizes/timestamps settled).
     try {
-        $item = Get-Item -LiteralPath $FilePath
+        $groupFiles = @(Get-ChildItem -LiteralPath $folder -File -ErrorAction Stop | Where-Object {
+            ($script:Config.includeExtensions -contains $_.Extension.ToLowerInvariant()) -and
+            ([System.IO.Path]::GetFileNameWithoutExtension($_.Name) -ieq $SaveName)
+        })
     }
     catch {
         return
     }
-    $signature = "$($item.LastWriteTimeUtc.Ticks)|$($item.Length)"
+    if ($groupFiles.Count -eq 0 -or -not (Test-SaveGroupComplete -Files $groupFiles)) { return }
+    $signature = Get-SaveGroupSignature -Files $groupFiles
 
-    # Build the destination name: OriginalSaveName__YYYY-MM-DD_HH-mm-ss.ext
-    $base      = [System.IO.Path]::GetFileNameWithoutExtension($FilePath)
-    $timestamp = Get-Date -Format 'yyyy-MM-dd_HH-mm-ss'
-    if ($script:Config.enableZipBackup) {
-        $destName = "${base}__${timestamp}${ext}.zip"
-    }
-    else {
-        $destName = "${base}__${timestamp}${ext}"
-    }
-    $destPath = Get-UniqueBackupPath -DestinationPath (Join-Path $script:Config.backupFolderPath $destName)
+    # Minute-precision timestamp: seconds add noise and aren't needed now that
+    # rolling backups replace the previous backup for each save name.
+    $timestamp = Get-Date -Format 'yyyy-MM-dd_HH-mm'
 
     if ($DryRun) {
-        Write-Log "[DRY-RUN] Would back up '$FilePath' -> '$destPath'" 'DRYRUN'
-        $script:BackupCache[$FilePath] = $signature   # avoid repeated dry-run spam
+        Write-Log ("[DRY-RUN] Would back up save '{0}' ({1} file(s)) -> '{2}'" -f $SaveName, $groupFiles.Count, (Join-Path $script:Config.backupFolderPath ("{0}__{1}" -f $SaveName, $timestamp))) 'DRYRUN'
+        $script:BackupCache[$SaveName] = $signature   # avoid repeated dry-run spam
         return
     }
 
@@ -625,51 +839,63 @@ function Invoke-BackupForFile {
         return
     }
 
-    $ok = if ($script:Config.enableZipBackup) {
-        New-ZipBackup -Source $FilePath -DestinationZip $destPath
-    }
-    else {
-        Copy-SaveFile -Source $FilePath -Destination $destPath
-    }
+    # Rolling backups overwrite the same-minute name (no collision suffix); the
+    # replacement step below removes any older same-name backup afterwards.
+    $written = New-SaveGroupBackup -SaveName $SaveName -Files $groupFiles -DestFolder $script:Config.backupFolderPath -Timestamp $timestamp
 
-    if ($ok) {
-        Write-Log "Backed up '$FilePath' -> '$destPath'" 'SUCCESS'
-        $script:BackupCache[$FilePath] = $signature
-        Invoke-Retention -Base $base -Ext $ext
+    if ($written) {
+        Write-Log ("Backed up save '{0}' ({1} file(s)) -> '{2}'" -f $SaveName, @($written).Count, ($written -join '; ')) 'SUCCESS'
+        $script:BackupCache[$SaveName] = $signature
+        Invoke-RollingReplacement -SaveName $SaveName -KeepPaths @($written)
+        Invoke-Retention -Base $SaveName -Ext '.scop'
     }
     else {
-        Write-Log "Backup FAILED for '$FilePath' (will retry on next change)." 'ERROR'
+        Write-Log "Backup FAILED for save '$SaveName' (will retry on next change)." 'ERROR'
     }
+}
+
+# Back up the logical save group that a changed file belongs to. Thin wrapper kept
+# so watch/poller call sites can pass a single file path; it resolves the base
+# name and backs up the whole group (matching siblings included).
+function Invoke-BackupForFile {
+    param(
+        [Parameter(Mandatory)] [string] $FilePath,
+        [int] $StabilityAttempts = 5
+    )
+    $ext = [System.IO.Path]::GetExtension($FilePath).ToLowerInvariant()
+    if ($script:Config.includeExtensions -notcontains $ext) { return }
+    $base = [System.IO.Path]::GetFileNameWithoutExtension($FilePath)
+    if ([string]::IsNullOrWhiteSpace($base)) { return }
+    Invoke-BackupGroup -SaveName $base -StabilityAttempts $StabilityAttempts
 }
 
 # ===========================================================================
 # Modes
 # ===========================================================================
 
-# Manual one-time backup of all current save files.
+# Manual one-time backup of all current logical save groups.
 function Invoke-BackupAll {
     $folder = $script:Config.saveFolderPath
     try {
-        $files = @(Get-ChildItem -LiteralPath $folder -File |
-                   Where-Object { $script:Config.includeExtensions -contains $_.Extension.ToLowerInvariant() })
+        $groups = @(Get-LiveSaveGroups -Folder $folder)
     }
     catch {
         Write-Log "Could not list save folder '$folder': $($_.Exception.Message)" 'ERROR'
         return
     }
 
-    if ($files.Count -eq 0) {
+    if ($groups.Count -eq 0) {
         Write-Log "No matching save files found in '$folder'." 'INFO'
         return
     }
 
-    Write-Log "Found $($files.Count) save file(s) to process." 'INFO'
-    foreach ($file in $files) {
+    Write-Log "Found $($groups.Count) logical save(s) to process." 'INFO'
+    foreach ($group in $groups) {
         try {
-            Invoke-BackupForFile $file.FullName
+            Invoke-BackupGroup -SaveName $group.SaveName
         }
         catch {
-            Write-Log "Unexpected error backing up '$($file.FullName)': $($_.Exception.Message)" 'ERROR'
+            Write-Log "Unexpected error backing up save '$($group.SaveName)': $($_.Exception.Message)" 'ERROR'
         }
     }
     Write-Log "One-time backup pass complete." 'INFO'
@@ -684,15 +910,14 @@ function Invoke-MilestoneBackup {
     $dest   = $script:Config.milestoneFolderPath
 
     try {
-        $files = @(Get-ChildItem -LiteralPath $folder -File |
-                   Where-Object { $script:Config.includeExtensions -contains $_.Extension.ToLowerInvariant() })
+        $groups = @(Get-LiveSaveGroups -Folder $folder)
     }
     catch {
         Write-Log "Could not list save folder '$folder': $($_.Exception.Message)" 'ERROR'
         return
     }
 
-    if ($files.Count -eq 0) {
+    if ($groups.Count -eq 0) {
         Write-Log "No matching save files found to snapshot in '$folder'." 'WARN'
         return
     }
@@ -706,50 +931,44 @@ function Invoke-MilestoneBackup {
         catch { Write-Log "Could not create milestone folder '$dest': $($_.Exception.Message)" 'ERROR'; return }
     }
 
-    # One shared timestamp so the whole save set is grouped as a single moment.
+    # Milestones keep a permanent, collision-safe second-precision timestamp shared
+    # across every save in this snapshot, so the whole moment is one set. They are
+    # NEVER replaced or auto-deleted (rolling replacement/retention ignore them).
     $timestamp = Get-Date -Format 'yyyy-MM-dd_HH-mm-ss'
-    Write-Log "Creating PERMANENT milestone snapshot ($($files.Count) file(s)) in '$dest'." 'INFO'
+    Write-Log "Creating PERMANENT milestone snapshot ($($groups.Count) save(s)) in '$dest'." 'INFO'
 
-    foreach ($file in $files) {
-        $base = [System.IO.Path]::GetFileNameWithoutExtension($file.FullName)
-        $ext  = $file.Extension.ToLowerInvariant()
-        if ($script:Config.enableZipBackup) {
-            $destName = "${base}__${timestamp}${ext}.zip"
-        }
-        else {
-            $destName = "${base}__${timestamp}${ext}"
-        }
-        $destPath = Get-UniqueBackupPath -DestinationPath (Join-Path $dest $destName)
+    foreach ($group in $groups) {
+        $groupFiles = @($group.Files)
 
         if ($DryRun) {
-            Write-Log "[DRY-RUN] Would create milestone '$($file.FullName)' -> '$destPath'" 'DRYRUN'
+            Write-Log ("[DRY-RUN] Would create milestone for save '{0}' ({1} file(s)) in '{2}'" -f $group.SaveName, $groupFiles.Count, $dest) 'DRYRUN'
             continue
         }
 
-        # Wait for the file to be readable/stable (same safety as normal backups).
-        $ready = $false
-        for ($attempt = 1; $attempt -le 5; $attempt++) {
-            if (Test-FileReady $file.FullName) { $ready = $true; break }
-            Write-Log "File not ready for milestone: '$($file.FullName)' (attempt $attempt/5)" 'WARN'
-            Start-Sleep -Seconds 1
+        # Wait for every file in the group to be readable/stable (same safety as
+        # normal backups) before snapshotting.
+        $ready = $true
+        foreach ($file in $groupFiles) {
+            $fileReady = $false
+            for ($attempt = 1; $attempt -le 5; $attempt++) {
+                if (Test-FileReady $file.FullName) { $fileReady = $true; break }
+                Write-Log "File not ready for milestone: '$($file.FullName)' (attempt $attempt/5)" 'WARN'
+                Start-Sleep -Seconds 1
+            }
+            if (-not $fileReady) { $ready = $false; break }
         }
         if (-not $ready) {
-            Write-Log "Skipping locked/unstable file for milestone: '$($file.FullName)'" 'ERROR'
+            Write-Log "Skipping locked/unstable save for milestone: '$($group.SaveName)'" 'ERROR'
             continue
         }
 
-        $ok = if ($script:Config.enableZipBackup) {
-            New-ZipBackup -Source $file.FullName -DestinationZip $destPath
-        }
-        else {
-            Copy-SaveFile -Source $file.FullName -Destination $destPath
-        }
+        $written = New-SaveGroupBackup -SaveName $group.SaveName -Files $groupFiles -DestFolder $dest -Timestamp $timestamp -UniqueCollision
 
-        if ($ok) {
-            Write-Log "Milestone saved '$($file.FullName)' -> '$destPath'" 'SUCCESS'
+        if ($written) {
+            Write-Log ("Milestone saved '{0}' ({1} file(s)) -> '{2}'" -f $group.SaveName, @($written).Count, ($written -join '; ')) 'SUCCESS'
         }
         else {
-            Write-Log "Milestone FAILED for '$($file.FullName)'." 'ERROR'
+            Write-Log "Milestone FAILED for save '$($group.SaveName)'." 'ERROR'
         }
     }
     Write-Log "Milestone snapshot complete (these are never auto-deleted)." 'INFO'
@@ -853,7 +1072,7 @@ function Show-StartupSummary {
     Write-Host ("  Watched ext.     : {0}" -f $exts)
     Write-Host ("  Mode             : {0}" -f $Mode)
     Write-Host ("  Dry-run          : {0}" -f $dryState)
-    Write-Host ("  Retention        : keep latest {0} rolling restore points" -f $script:Config.keepMaxBackupsPerSave)
+    Write-Host ("  Retention        : keep newest backups for up to {0} logical saves" -f $script:Config.keepMaxBackupsPerSave)
     Write-Host ("  Zip backups      : {0}" -f $zipState)
     Write-Host ("  Backup delay     : {0} second(s)" -f $script:Config.backupDelaySeconds)
     Write-Host ("  Log file         : {0}" -f $script:Config.logFilePath)

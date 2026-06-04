@@ -412,9 +412,9 @@ function Update-Info {
     Set-PathLabel $lblSaveVal $script:Config.saveFolderPath
     Set-PathLabel $lblBakVal  $script:Config.backupFolderPath
     $exts = ($script:Config.includeExtensions -join '  ')
-    $zip  = if ($script:Config.enableZipBackup) { '   (.zip)' } else { '' }
-    $lblRuleVal.Text = "$exts      -      keep latest $($script:Config.keepMaxBackupsPerSave) restore points$zip"
-    $script:Tip.SetToolTip($lblRuleVal, "File types backed up: $($script:Config.includeExtensions -join ' ')`r`nRolling backups keep the latest $($script:Config.keepMaxBackupsPerSave) restore points. Milestones and pre-restore safety backups are kept separately.`r`nZip backups: $(if ($script:Config.enableZipBackup) { 'on' } else { 'off' }).")
+    $zip  = if ($script:Config.enableZipBackup) { '   (.zip per save)' } else { '' }
+    $lblRuleVal.Text = "$exts      -      newest backup per save, up to $($script:Config.keepMaxBackupsPerSave) saves$zip"
+    $script:Tip.SetToolTip($lblRuleVal, "File types backed up: $($script:Config.includeExtensions -join ' ')`r`nA logical save is .scop + .scoc, with an optional .dds thumbnail, grouped as one restore point.`r`nRolling backups keep the newest backup for each save name (up to $($script:Config.keepMaxBackupsPerSave) different saves). Milestones and pre-restore safety backups are kept separately.`r`nZip backups: $(if ($script:Config.enableZipBackup) { 'on - each save is stored as one .zip' } else { 'off' }).")
     $lblFootBy.Text = 'Created by'
     $lblFootName.Text = 'GAM33RSFR33AK'
     $script:Tip.SetToolTip($lblFootBy, $creatorCredit)
@@ -554,9 +554,9 @@ function Show-SettingsDialog {
 
     # --- BACKUP BEHAVIOR ---
     Add-Section 'BACKUP BEHAVIOR' 206
-    $tbExt = Add-Field 'File types' 236 ($script:Config.includeExtensions -join ' ') $null 'Save file types to copy. .scop + .scoc are a full save; .dds is the thumbnail.'
+    $tbExt = Add-Field 'File types' 236 ($script:Config.includeExtensions -join ' ') $null 'One save = .scop + .scoc (a full save) plus an optional .dds thumbnail, grouped together.'
 
-    $dlg.Controls.Add((New-Label 'Keep points' 18 292 96 20 $cMuted $fBody))
+    $dlg.Controls.Add((New-Label 'Keep saves' 18 292 96 20 $cMuted $fBody))
     $numKeep = New-Object System.Windows.Forms.NumericUpDown
     $numKeep.SetBounds(118, 288, 84, 24); $numKeep.Minimum = 1; $numKeep.Maximum = 100000
     $numKeep.BackColor = $cCardHi; $numKeep.ForeColor = $cText; $numKeep.BorderStyle = 'FixedSingle'
@@ -567,15 +567,15 @@ function Show-SettingsDialog {
     $numDelay.SetBounds(346, 288, 70, 24); $numDelay.Minimum = 0; $numDelay.Maximum = 120
     $numDelay.BackColor = $cCardHi; $numDelay.ForeColor = $cText; $numDelay.BorderStyle = 'FixedSingle'
     $numDelay.Value = [Math]::Min(120, [Math]::Max(0, [int]$script:Config.backupDelaySeconds))
-    $dlg.Controls.Add((New-Label 'Keeps latest restore points. Milestones and safety backups stay separate.' 118 316 452 16 $cFaint $fSmall))
+    $dlg.Controls.Add((New-Label 'Newest backup per save name, for up to this many saves. Milestones/safety backups stay separate.' 118 316 452 16 $cFaint $fSmall))
 
     $chkZip = New-Object System.Windows.Forms.CheckBox
-    $chkZip.Text = 'Store each backup as a .zip'
+    $chkZip.Text = 'Store each save as one .zip'
     $chkZip.SetBounds(116, 342, 320, 22)
     $chkZip.ForeColor = $cText; $chkZip.BackColor = [System.Drawing.Color]::Transparent
     $chkZip.Checked = [bool]$script:Config.enableZipBackup
     $dlg.Controls.Add($chkZip)
-    $dlg.Controls.Add((New-Label 'Zip saves space; each restore must be extracted first. Off = plain copies (easiest to restore).' 118 366 452 16 $cFaint $fSmall))
+    $dlg.Controls.Add((New-Label 'Zip mode stores each complete save (.scop+.scoc+.dds) as one .zip. Off = plain copies (easiest to restore).' 118 366 452 16 $cFaint $fSmall))
 
     # --- ADVANCED & LOGGING ---
     Add-Section 'ADVANCED & LOGGING' 396
@@ -755,13 +755,17 @@ function Show-RestoreDialog {
 
     function Get-RestoreDialogTimeText {
         param([string] $Stamp)
-        try {
-            $dt = [datetime]::ParseExact($Stamp, 'yyyy-MM-dd_HH-mm-ss', [Globalization.CultureInfo]::InvariantCulture)
-            return $dt.ToString('yyyy-MM-dd HH:mm:ss')
+        # Minute-precision rolling backups (yyyy-MM-dd_HH-mm) and second-precision
+        # milestone / older backups (yyyy-MM-dd_HH-mm-ss) are both supported.
+        foreach ($fmt in @('yyyy-MM-dd_HH-mm-ss', 'yyyy-MM-dd_HH-mm')) {
+            try {
+                $dt = [datetime]::ParseExact($Stamp, $fmt, [Globalization.CultureInfo]::InvariantCulture)
+                $outFmt = if ($fmt -like '*ss') { 'yyyy-MM-dd HH:mm:ss' } else { 'yyyy-MM-dd HH:mm' }
+                return $dt.ToString($outFmt)
+            }
+            catch { }
         }
-        catch {
-            return $Stamp
-        }
+        return $Stamp
     }
 
     function Update-RestorePreview {

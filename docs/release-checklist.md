@@ -8,14 +8,12 @@ The first public release, `v1.0.0`, has already been published.
 - Release page:
   `https://github.com/PabloBratee/anomaly-save-guardian/releases/tag/v1.0.0`
 - Release ZIP: `Anomaly-Save-Guardian-v1.0.0.zip`
-- SHA256:
-  `603435B7144C8866C36F2C9C8E370CFB9C3B8750BCB4FA7F6BDE2DD14F3BADD8`
+- SHA256: recompute from `dist\Anomaly-Save-Guardian-v1.0.0.zip` before any
+  release asset refresh.
 
-> **v1.0.0 refresh:** the release was refreshed in place (still tag `v1.0.0`) to
-> apply the **Anomaly Save Guardian** branding, the no-console
-> `Start-Anomaly-Save-Guardian.vbs` launcher, the new app icon and the
-> `Anomaly-Save-Guardian-v1.0.0.zip` package name. The tag was not moved or
-> recreated; only the release asset and notes were updated.
+> **v1.0.0 refresh:** any refresh should stay on tag `v1.0.0`, keep the
+> `Anomaly-Save-Guardian-v1.0.0.zip` package name, and avoid moving, deleting or
+> recreating the tag. Refresh only the existing release asset/notes after review.
 
 Do not recreate the tag or create a new release unless intentionally preparing a
 new version.
@@ -41,3 +39,15 @@ new version.
   `Start-Anomaly-Save-Guardian.vbs` and `anomaly-save-guardian.ico`, and does not
   contain personal config, logs, temp folders, `.git`, `.github`, tests or a
   nested `dist` folder.
+
+## v1.0.0 logical save refresh checks
+
+- One logical save is `.scop` + `.scoc`, plus optional `.dds`.
+- Zip mode stores one complete logical save group per zip.
+- Rolling backups replace the previous backup for the same save name and use
+  minute-precision names (`yyyy-MM-dd_HH-mm`).
+- Rolling replacement only deletes older normal rolling backups in the configured
+  backup folder.
+- Live savedgames are never deleted or modified by backup/replacement.
+- Milestones and pre-restore safety backups are kept separately and are not
+  replaced by normal rolling backups.

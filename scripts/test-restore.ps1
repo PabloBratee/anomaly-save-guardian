@@ -329,6 +329,68 @@ try {
         Assert-True (-not (Test-Path -LiteralPath (Join-Path $root 'evil.scop'))) 'Zip traversal wrote outside the save folder.'
     }
 
+    Invoke-Test 'non-zip discovery does not falsely report missing files when the whole group exists' {
+        $root = New-TestRoot
+        $cfg = Initialize-TestConfig -Root $root
+        # All three files share ONE timestamp, the way grouped backups now write them.
+        New-FakeFile $cfg.backupFolderPath 'quicksave__2026-06-04_14-00.scop' 'scope' | Out-Null
+        New-FakeFile $cfg.backupFolderPath 'quicksave__2026-06-04_14-00.scoc' 'scoc' | Out-Null
+        New-FakeFile $cfg.backupFolderPath 'quicksave__2026-06-04_14-00.dds' 'thumb' | Out-Null
+
+        $point = Get-PointBySave @(Get-RestorePoints -Config $cfg) 'quicksave' 'Rolling'
+        Assert-Equal 'Complete' $point.Status 'A complete .scop + .scoc (+ .dds) group must not be reported as missing.'
+        Assert-Equal 3 $point.FileCount 'Expected the three group files to form one restore point.'
+    }
+
+    Invoke-Test 'discovers one grouped zip as a single complete restore point' {
+        $root = New-TestRoot
+        $cfg = Initialize-TestConfig -Root $root
+        New-ZipFromText (Join-Path $cfg.backupFolderPath 'zipgroup__2026-06-04_20-00.zip') @{
+            'zipgroup.scop' = 'zip-scope'
+            'zipgroup.scoc' = 'zip-scoc'
+            'zipgroup.dds'  = 'zip-thumb'
+        }
+
+        $point = Get-PointBySave @(Get-RestorePoints -Config $cfg) 'zipgroup' 'Zip'
+        Assert-Equal 'Complete' $point.Status 'One zip with .scop + .scoc should be a complete restore point.'
+        Assert-Equal 3 $point.FileCount 'Grouped zip should expose all three save files.'
+    }
+
+    Invoke-Test 'restores a complete save from one grouped zip' {
+        $root = New-TestRoot
+        $cfg = Initialize-TestConfig -Root $root
+        New-ZipFromText (Join-Path $cfg.backupFolderPath 'zipgroup__2026-06-04_20-00.zip') @{
+            'zipgroup.scop' = 'zip-scope'
+            'zipgroup.scoc' = 'zip-scoc'
+            'zipgroup.dds'  = 'zip-thumb'
+        }
+
+        $point = Get-PointBySave @(Get-RestorePoints -Config $cfg) 'zipgroup' 'Zip'
+        $result = Invoke-RestorePoint -Config $cfg -RestorePoint $point -Confirmed
+
+        Assert-True $result.Success 'Grouped zip restore did not report success.'
+        Assert-Equal 'zip-scope' ((Get-Content -LiteralPath (Join-Path $cfg.saveFolderPath 'zipgroup.scop') -Raw).Trim()) 'Grouped zip .scop was not restored.'
+        Assert-Equal 'zip-scoc' ((Get-Content -LiteralPath (Join-Path $cfg.saveFolderPath 'zipgroup.scoc') -Raw).Trim()) 'Grouped zip .scoc was not restored.'
+        Assert-Equal 'zip-thumb' ((Get-Content -LiteralPath (Join-Path $cfg.saveFolderPath 'zipgroup.dds') -Raw).Trim()) 'Grouped zip .dds was not restored.'
+    }
+
+    Invoke-Test 'blocks path traversal inside a grouped zip before copying anything' {
+        $root = New-TestRoot
+        $cfg = Initialize-TestConfig -Root $root
+        New-ZipFromText (Join-Path $cfg.backupFolderPath 'evilgroup__2026-06-04_21-00.zip') @{
+            '..\evil.scop'  = 'evil-scope'
+            'evilgroup.scoc' = 'evil-scoc'
+        }
+
+        $point = Get-PointBySave @(Get-RestorePoints -Config $cfg) 'evilgroup' 'Zip'
+        $message = $null
+        try { Invoke-RestorePoint -Config $cfg -RestorePoint $point -Confirmed | Out-Null } catch { $message = $_.Exception.Message }
+
+        Assert-True ($message -like '*unsafe zip entry*') 'Grouped zip traversal was not rejected.'
+        Assert-Equal 0 @(Get-ChildItem -LiteralPath $cfg.saveFolderPath -File).Count 'Unsafe grouped zip copied files.'
+        Assert-True (-not (Test-Path -LiteralPath (Join-Path $root 'evil.scop'))) 'Grouped zip traversal wrote outside the save folder.'
+    }
+
     Invoke-Test 'restore requires explicit confirmation' {
         $root = New-TestRoot
         $cfg = Initialize-TestConfig -Root $root

@@ -82,11 +82,9 @@ Write-Host ''
 Write-Host "Contents:" -ForegroundColor Cyan
 $include | ForEach-Object { Write-Host "  - $_" }
 Write-Host ''
-Write-Host "Next steps to publish a GitHub Release:" -ForegroundColor Cyan
-Write-Host "  1. After final changes are committed on local main, push and tag the release:"
-Write-Host "       git push origin main"
-Write-Host "       git tag v$Version"
-Write-Host "       git push origin v$Version"
-Write-Host "  2. On GitHub: Releases -> Draft a new release -> choose tag v$Version."
-Write-Host "  3. Title it 'v$Version', paste the relevant CHANGELOG section as the notes."
-Write-Host "  4. Attach $zipName as a release asset, then Publish."
+Write-Host "Next steps:" -ForegroundColor Cyan
+Write-Host "  - Inspect the zip contents and run the extracted UI with -NoShow."
+Write-Host "  - Compute SHA256 with:"
+Write-Host "      Get-FileHash -Algorithm SHA256 -LiteralPath `"$zipPath`""
+Write-Host "  - For a v$Version refresh, do not create or move tags; replace the existing"
+Write-Host "    release asset only after review."

@@ -32,11 +32,13 @@ Created by GAM33RSFR33AK.
   and a *Reset to defaults* button.
 - 🛟 **Restore Backup** — choose a restore point, review the files, create a
   safety backup, then restore with confirmation.
-- 🗂️ **Timestamped, append-only** backups — a death can never overwrite an
-  older backup.
-- ♻️ **Retention** — rolling backups keep the latest 10 restore points by
-  default; milestones and pre-restore safety backups are kept separately.
-- 🗜️ **Optional `.zip`** backups.
+- 🧩 **Logical saves** — `.scop` + `.scoc`, plus the optional `.dds` thumbnail,
+  are grouped and backed up together as **one** restore point.
+- ♻️ **Clean rolling backups** — each save name (quicksave, autosave, sleep,
+  manual saves) keeps just its **newest** backup, so the same save never piles up
+  endless copies. Milestones and pre-restore safety backups are kept separately.
+- 🗜️ **Optional `.zip`** backups — zip mode stores each complete save as **one**
+  `.zip`.
 - 📌 **System tray** — minimise/close to tray, keeps running in the background.
 - 💪 **Robust** — handles locked/partly-written saves and an unplugged backup
   drive without ever crashing.
@@ -129,9 +131,9 @@ via the shortcut's **Properties → Change Icon**.
     `*.scop` file — that folder is your save folder.
 - **Backup folder** — put it on a **different physical drive** from the game.
   A backup on the same disk won't help if that disk dies.
-- **Keep the defaults** (`.sav .scop .scoc .dds`, keep 10 restore points)
-  unless you have a reason to change them. `.scop` + `.scoc` together are a full
-  save.
+- **Keep the defaults** (`.sav .scop .scoc .dds`, keep 10 saves) unless you have
+  a reason to change them. One logical save is `.scop` + `.scoc` together (a full
+  save), plus the optional `.dds` thumbnail.
 - Before anything risky (a tough fight, the Brain Scorcher, a long-run hardcore
   character), hit **Take Milestone** — it's a permanent snapshot that retention
   never deletes.
@@ -190,9 +192,9 @@ Use **Settings** in the app (recommended), or edit
 | `saveFolderPath` | Your GAMMA/Anomaly `appdata\savedgames` folder (source). |
 | `backupFolderPath` | Where rolling backups are written. |
 | `milestoneFolderPath` | Permanent snapshots — retention **never** deletes these. Optional; defaults to a `Milestones` subfolder of the backup folder. |
-| `includeExtensions` | File types to back up. `.scop` + `.scoc` are a full save; `.dds` is the thumbnail. |
-| `backupDelaySeconds` | Settle time after a change before copying. |
-| `keepMaxBackupsPerSave` | How many grouped rolling restore points to keep total. The name is kept for backward compatibility. Milestones and pre-restore safety backups are kept separately. |
+| `includeExtensions` | File types that make up a save. `.scop` + `.scoc` are a full save; `.dds` is the optional thumbnail. They are grouped by save name. |
+| `backupDelaySeconds` | Settle time after a change before copying, so a save's files are backed up together once they finish writing. |
+| `keepMaxBackupsPerSave` | How many different logical saves to keep. Rolling backups keep the **newest** backup per save name; this caps how many distinct save names are retained. The key name is kept for backward compatibility. Milestones and pre-restore safety backups are kept separately. |
 | `enableZipBackup` | `true` = store each backup as a `.zip`; `false` = plain copy (easiest to restore). |
 | `logFilePath` | Where the log is written. |
 
@@ -201,15 +203,18 @@ dialog handles this for you.
 
 ---
 
-## Hardcore / Invictus runs: will a death overwrite my backups?
+## Hardcore / Invictus runs: how do I lock in an "alive" point?
 
-**No.** Each backup is a separate, timestamped file. When you die, the game
-overwrites only your *live* save; the tool then writes the dead state as a **new**
-backup and leaves every earlier "alive" backup untouched.
+Rolling backups are designed to stay clean: for each save name they keep only the
+**newest** backup. That means a fresh quicksave replaces the previous *quicksave*
+backup — great for everyday safety, but it is **not** meant to preserve a specific
+older moment forever.
 
-To protect a specific point against retention pruning, **Take Milestone** — those
-snapshots live in the milestone folder and are never auto-deleted, surviving any
-number of deaths and saves.
+To lock in a point so it survives any number of later deaths and saves, **Take
+Milestone**. Milestones are permanent, timestamped snapshots that live in the
+milestone folder and are **never** replaced or auto-deleted by rolling backups.
+Hit it before anything risky (a tough fight, the Brain Scorcher, a long hardcore
+character).
 
 ---
 
@@ -228,10 +233,11 @@ Use **Restore Backup** in the main window.
    files back using the original game save names.
 7. Launch the game and load the save.
 
-A full GAMMA/Anomaly save needs the matching **`.scop` + `.scoc` pair** with the
-same timestamp. The **`.dds` thumbnail is optional** and is restored when it is
-available. If the required pair is missing, the app marks the restore point as
-**Missing pair** and blocks restore by default.
+A full GAMMA/Anomaly save is one **logical save**: the matching **`.scop` +
+`.scoc` pair**, grouped together as a single restore point. The **`.dds`
+thumbnail is optional** and is restored when it is available. The app only marks a
+restore point as **Missing pair** when the `.scop` or `.scoc` is genuinely absent
+from that save group — a complete group is never falsely reported as incomplete.
 
 ### Pre-restore safety backups
 

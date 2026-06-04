@@ -58,6 +58,13 @@ function Assert-RestoreConfig {
     }
 }
 
+# Timestamp pattern shared by the restore parsers. Seconds are optional so both
+# minute-precision rolling backups and second-precision milestone / older backups
+# are recognized.
+$script:RestoreTimestampPattern = '\d{4}-\d{2}-\d{2}_\d{2}-\d{2}(?:-\d{2})?'
+$script:RestoreSaveExtensions = @('.scop', '.scoc', '.dds')
+
+# Parse a PLAIN (non-zip) backup file name '<save>__<timestamp>[__NNN]<ext>'.
 function Get-RestoreFileInfoFromName {
     param(
         [Parameter(Mandatory)] [System.IO.FileInfo] $File,
@@ -65,17 +72,12 @@ function Get-RestoreFileInfoFromName {
     )
 
     $name = $File.Name
-    $isZip = $false
-    if ($name.ToLowerInvariant().EndsWith('.zip')) {
-        $isZip = $true
-        $name = [System.IO.Path]::GetFileNameWithoutExtension($name)
-    }
+    $ext = [System.IO.Path]::GetExtension($name).ToLowerInvariant()
+    if ($script:RestoreSaveExtensions -notcontains $ext) { return $null }
+    $core = [System.IO.Path]::GetFileNameWithoutExtension($name)
 
-    $match = [regex]::Match($name, '^(?<save>.+)__(?<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})(?:__(?<collision>\d{3,4}))?(?<ext>\.[^.\\/:]+)$')
+    $match = [regex]::Match($core, ('^(?<save>.+)__(?<timestamp>{0})(?:__(?<collision>\d{{3,4}}))?$' -f $script:RestoreTimestampPattern))
     if (-not $match.Success) { return $null }
-
-    $ext = $match.Groups['ext'].Value.ToLowerInvariant()
-    if (@('.scop', '.scoc', '.dds') -notcontains $ext) { return $null }
 
     $saveName = $match.Groups['save'].Value
     if (-not (Test-RestoreSaveName $saveName)) { return $null }
@@ -88,10 +90,71 @@ function Get-RestoreFileInfoFromName {
         SourcePath      = $File.FullName
         SourceName      = $File.Name
         Size            = [int64]$File.Length
-        Type            = $(if ($isZip) { 'Zip' } else { $Type })
-        IsZip           = $isZip
+        Type            = $Type
+        IsZip           = $false
+        EntryName       = $null
         DestinationName = "$saveName$ext"
     }
+}
+
+# Parse a ZIP backup and return one info object per save file it contains. Two
+# shapes are supported:
+#   * grouped  '<save>__<timestamp>.zip'        -> one zip holds the whole save
+#   * legacy   '<save>__<timestamp>.<ext>.zip'  -> older single-entry zips
+# Entry sizes/extensions are read directly from the archive so completeness is
+# accurate. Returns @() when the name/zip is not a recognizable backup.
+function Get-ZipRestoreInfos {
+    param(
+        [Parameter(Mandatory)] [System.IO.FileInfo] $File
+    )
+
+    $stem = [System.IO.Path]::GetFileNameWithoutExtension($File.Name)   # strip .zip
+    $inner = [System.IO.Path]::GetExtension($stem).ToLowerInvariant()
+    if ($inner -and ($script:RestoreSaveExtensions -contains $inner)) {
+        $core = [System.IO.Path]::GetFileNameWithoutExtension($stem)    # legacy single-entry zip
+    }
+    else {
+        $core = $stem                                                   # grouped zip
+    }
+
+    $match = [regex]::Match($core, ('^(?<save>.+)__(?<timestamp>{0})(?:__(?<collision>\d{{3,4}}))?$' -f $script:RestoreTimestampPattern))
+    if (-not $match.Success) { return @() }
+    $saveName = $match.Groups['save'].Value
+    if (-not (Test-RestoreSaveName $saveName)) { return @() }
+
+    Add-Type -AssemblyName System.IO.Compression -ErrorAction SilentlyContinue
+    Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
+    $infos = @()
+    try {
+        $zip = [System.IO.Compression.ZipFile]::OpenRead($File.FullName)
+    }
+    catch {
+        return @()
+    }
+    try {
+        foreach ($entry in $zip.Entries) {
+            if ([string]::IsNullOrWhiteSpace($entry.Name)) { continue }
+            $entryExt = [System.IO.Path]::GetExtension($entry.Name).ToLowerInvariant()
+            if ($script:RestoreSaveExtensions -notcontains $entryExt) { continue }
+            $infos += [PSCustomObject]@{
+                SaveName        = $saveName
+                Timestamp       = $match.Groups['timestamp'].Value
+                CollisionSuffix = $match.Groups['collision'].Value
+                Extension       = $entryExt
+                SourcePath      = $File.FullName
+                SourceName      = $File.Name
+                Size            = [int64]$entry.Length
+                Type            = 'Zip'
+                IsZip           = $true
+                EntryName       = $entry.FullName
+                DestinationName = $entry.Name
+            }
+        }
+    }
+    finally {
+        $zip.Dispose()
+    }
+    return $infos
 }
 
 function Test-RestoreSaveName {
@@ -159,9 +222,16 @@ function Get-RestorePoints {
         if (-not (Test-Path -LiteralPath $loc.Path -PathType Container)) { continue }
         $files = @(Get-ChildItem -LiteralPath $loc.Path -File -ErrorAction Stop)
         foreach ($file in $files) {
-            $info = Get-RestoreFileInfoFromName -File $file -Type $loc.Type
-            if ($null -eq $info) { continue }
-            Add-RestoreFileToGroups -Groups $groups -Info $info
+            if ($file.Name.ToLowerInvariant().EndsWith('.zip')) {
+                foreach ($info in @(Get-ZipRestoreInfos -File $file)) {
+                    Add-RestoreFileToGroups -Groups $groups -Info $info
+                }
+            }
+            else {
+                $info = Get-RestoreFileInfoFromName -File $file -Type $loc.Type
+                if ($null -eq $info) { continue }
+                Add-RestoreFileToGroups -Groups $groups -Info $info
+            }
         }
     }
 
@@ -317,42 +387,48 @@ function Expand-ZipRestoreSources {
 
     $expanded = @()
     try {
-        foreach ($file in @($RestorePoint.Files)) {
-            if (-not $file.IsZip) {
-                $expanded += $file
-                continue
-            }
-            $zip = [System.IO.Compression.ZipFile]::OpenRead($file.SourcePath)
-            try {
-                $entries = @($zip.Entries | Where-Object { -not [string]::IsNullOrWhiteSpace($_.Name) })
-                if ($entries.Count -ne 1) {
-                    throw "Zip backup must contain exactly one save file: $($file.SourcePath)"
-                }
-                $entry = $entries[0]
-                $entryLeaf = Split-Path -Leaf $entry.FullName
-                if ($entry.FullName -ne $entryLeaf -or $entry.FullName -match '(^|[\\/])\.\.([\\/]|$)') {
-                    throw "Blocked unsafe zip entry '$($entry.FullName)' in '$($file.SourcePath)'."
-                }
-                if ($entryLeaf -ne $file.DestinationName) {
-                    throw "Zip backup contains '$entryLeaf' but restore expected '$($file.DestinationName)'."
-                }
-                if ([System.IO.Path]::GetExtension($entryLeaf).ToLowerInvariant() -ne $file.Extension) {
-                    throw "Zip backup contains an unexpected file type: $entryLeaf"
-                }
+        # Plain (already-extracted) files pass straight through.
+        foreach ($file in @($RestorePoint.Files | Where-Object { -not $_.IsZip })) {
+            $expanded += $file
+        }
 
-                $dest = Join-Path $tempRoot $entryLeaf
-                if (-not (Test-PathInsideFolder -Path $dest -Folder $tempRoot)) {
-                    throw "Blocked unsafe zip entry '$($entry.FullName)' in '$($file.SourcePath)'."
-                }
-                [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $dest, $true)
-                $expanded += [PSCustomObject]@{
-                    Extension       = $file.Extension
-                    SourcePath      = $dest
-                    OriginalSource  = $file.SourcePath
-                    DestinationName = $file.DestinationName
-                    Size            = (Get-Item -LiteralPath $dest).Length
-                    IsZip           = $false
-                    TempRoot        = $tempRoot
+        # Zip-backed files may all live in ONE grouped archive, so open each
+        # distinct zip a single time and extract every save file it owns.
+        $zipFiles = @($RestorePoint.Files | Where-Object { $_.IsZip })
+        $zipPaths = @($zipFiles | ForEach-Object { $_.SourcePath } | Select-Object -Unique)
+        foreach ($zipPath in $zipPaths) {
+            $zip = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
+            try {
+                foreach ($file in @($zipFiles | Where-Object { $_.SourcePath -eq $zipPath })) {
+                    $entry = @($zip.Entries | Where-Object { $_.FullName -eq $file.EntryName })[0]
+                    if (-not $entry) {
+                        throw "Zip backup is missing expected entry '$($file.EntryName)': $zipPath"
+                    }
+                    $entryLeaf = Split-Path -Leaf $entry.FullName
+                    if ($entry.FullName -ne $entryLeaf -or $entry.FullName -match '(^|[\\/])\.\.([\\/]|$)') {
+                        throw "Blocked unsafe zip entry '$($entry.FullName)' in '$zipPath'."
+                    }
+                    if ($entryLeaf -ne $file.DestinationName) {
+                        throw "Zip backup contains '$entryLeaf' but restore expected '$($file.DestinationName)'."
+                    }
+                    if ([System.IO.Path]::GetExtension($entryLeaf).ToLowerInvariant() -ne $file.Extension) {
+                        throw "Zip backup contains an unexpected file type: $entryLeaf"
+                    }
+
+                    $dest = Join-Path $tempRoot $entryLeaf
+                    if (-not (Test-PathInsideFolder -Path $dest -Folder $tempRoot)) {
+                        throw "Blocked unsafe zip entry '$($entry.FullName)' in '$zipPath'."
+                    }
+                    [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $dest, $true)
+                    $expanded += [PSCustomObject]@{
+                        Extension       = $file.Extension
+                        SourcePath      = $dest
+                        OriginalSource  = $file.SourcePath
+                        DestinationName = $file.DestinationName
+                        Size            = (Get-Item -LiteralPath $dest).Length
+                        IsZip           = $false
+                        TempRoot        = $tempRoot
+                    }
                 }
             }
             finally {
