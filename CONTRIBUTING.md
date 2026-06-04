@@ -21,10 +21,14 @@ portable, and safe for non-technical players.
 | File | Purpose |
 |---|---|
 | `backup-stalker-gamma-saves.ps1` | Backup engine + CLI (also dot-sourced as a library by the UI). |
+| `restore-stalker-gamma-saves.ps1` | Restore discovery, validation, safety backup and copy helpers. |
 | `stalker-gamma-backup-ui.ps1` | The WinForms desktop app. |
+| `Launch STALKER GAMMA Save Backup.cmd` | Portable double-click launcher. |
+| `Create-Desktop-Shortcut.ps1` | Desktop shortcut helper. |
 | `stalker-gamma-backup-config.example.json` | Config template (committed). |
 | `scripts/check-syntax.ps1` | Parse-checks every `.ps1`. Run before pushing. |
-| `scripts/test-release.ps1` | Runs safe temp-folder fake-save release tests. |
+| `scripts/test-release.ps1` | Runs safe temp-folder fake-save backup/release tests. |
+| `scripts/test-restore.ps1` | Runs safe temp-folder fake-save restore tests. |
 | `scripts/package-release.ps1` | Builds a clean release `.zip`. |
 
 ## Before you open a PR
@@ -36,6 +40,7 @@ portable, and safe for non-technical players.
 2. **Run the safe fake-save release tests**:
    ```powershell
    .\scripts\test-release.ps1
+   .\scripts\test-restore.ps1
    ```
 3. **Build the UI** without showing it (sanity check that it constructs):
    ```powershell

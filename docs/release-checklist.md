@@ -24,15 +24,11 @@ Use this checklist to publish `v1.1.0`.
 
 ## Publish
 
-After the final release-readiness changes are merged to `main`, run this from an
-updated `main` checkout:
+After the final release-readiness changes are committed on local `main`, run:
 
 ```powershell
-git switch main
-git pull --ff-only origin main
-git status
-git tag v1.1.0
 git push origin main
+git tag v1.1.0
 git push origin v1.1.0
 ```
 

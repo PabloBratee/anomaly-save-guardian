@@ -209,6 +209,36 @@ try {
         Assert-True (Test-Path -LiteralPath (Join-Path $result.SafetyBackupFolder 'restore-manifest.txt')) 'Safety backup manifest was not written.'
     }
 
+    Invoke-Test 'pre-restore safety backup folders are unique for rapid repeated restores' {
+        $root = New-TestRoot
+        $cfg = Initialize-TestConfig -Root $root
+        New-FakeFile $cfg.saveFolderPath 'quicksave.scop' 'live-first-scope' | Out-Null
+        New-FakeFile $cfg.saveFolderPath 'quicksave.scoc' 'live-first-scoc' | Out-Null
+        New-FakeFile $cfg.backupFolderPath 'quicksave__2026-06-04_16-30-00.scop' 'backup-scope' | Out-Null
+        New-FakeFile $cfg.backupFolderPath 'quicksave__2026-06-04_16-30-00.scoc' 'backup-scoc' | Out-Null
+
+        $point = Get-PointBySave @(Get-RestorePoints -Config $cfg) 'quicksave' 'Rolling'
+        function Get-Date {
+            param([string] $Format)
+            $fixed = [datetime]'2026-06-04T16:30:30'
+            if ($Format) { return $fixed.ToString($Format, [Globalization.CultureInfo]::InvariantCulture) }
+            return $fixed
+        }
+        try {
+            $first = Invoke-RestorePoint -Config $cfg -RestorePoint $point -Confirmed
+            Set-Content -LiteralPath (Join-Path $cfg.saveFolderPath 'quicksave.scop') -Value 'live-second-scope' -Encoding ASCII
+            Set-Content -LiteralPath (Join-Path $cfg.saveFolderPath 'quicksave.scoc') -Value 'live-second-scoc' -Encoding ASCII
+            $second = Invoke-RestorePoint -Config $cfg -RestorePoint $point -Confirmed
+        }
+        finally {
+            Remove-Item -LiteralPath 'Function:\Get-Date' -ErrorAction SilentlyContinue
+        }
+
+        Assert-True ($first.SafetyBackupFolder -ne $second.SafetyBackupFolder) 'Repeated restores reused the same safety backup folder.'
+        Assert-Equal 'live-first-scope' ((Get-Content -LiteralPath (Join-Path $first.SafetyBackupFolder 'quicksave.scop') -Raw).Trim()) 'First safety backup was overwritten.'
+        Assert-Equal 'live-second-scope' ((Get-Content -LiteralPath (Join-Path $second.SafetyBackupFolder 'quicksave.scop') -Raw).Trim()) 'Second safety backup did not capture the current live file.'
+    }
+
     Invoke-Test 'cancels restore if pre-restore safety backup cannot be created' {
         $root = New-TestRoot
         $cfg = Initialize-TestConfig -Root $root

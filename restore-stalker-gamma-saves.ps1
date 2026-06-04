@@ -242,6 +242,18 @@ function New-PreRestoreSafetyBackup {
         if (Test-Path -LiteralPath $root -PathType Leaf) {
             throw "Safety backup location is blocked by a file: $root"
         }
+        if (Test-Path -LiteralPath $folder) {
+            for ($i = 2; $i -le 9999; $i++) {
+                $candidate = Join-Path $root ("{0}__{1:D3}" -f $folderName, $i)
+                if (-not (Test-Path -LiteralPath $candidate)) {
+                    $folder = $candidate
+                    break
+                }
+            }
+            if (Test-Path -LiteralPath $folder) {
+                throw "Could not create a unique pre-restore safety backup folder: $folder"
+            }
+        }
         New-Item -ItemType Directory -Path $folder -Force -ErrorAction Stop | Out-Null
         if (-not (Test-Path -LiteralPath $folder -PathType Container)) {
             throw "Safety backup folder was not created: $folder"
