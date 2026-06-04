@@ -19,5 +19,10 @@ This tool aims to stay small, dependency-free, and beginner-friendly. If your
 idea needs extra installs or makes the UI more complex, suggest how it could
 stay optional.
 
+**Current release**
+Please check whether the request already exists in
+[v1.0.0](https://github.com/PabloBratee/anomaly-save-guardian/releases/tag/v1.0.0)
+before opening a duplicate.
+
 **Anything else?**
 Mockups, examples, or links.

@@ -42,17 +42,21 @@ portable, and safe for non-technical players.
    .\scripts\test-release.ps1
    .\scripts\test-restore.ps1
    ```
-3. **Build the UI** without showing it (sanity check that it constructs):
+3. **Run the single-instance guard test**:
    ```powershell
-   powershell -STA -ExecutionPolicy Bypass -File .\stalker-gamma-backup-ui.ps1 -NoShow
+   .\scripts\test-ui-single-instance.ps1
    ```
-4. **Test the engine safely** against throwaway folders with `-DryRun` and/or a
+4. **Build the UI** without showing it (sanity check that it constructs):
+   ```powershell
+   powershell -STA -NoProfile -ExecutionPolicy Bypass -File .\stalker-gamma-backup-ui.ps1 -NoShow
+   ```
+5. **Test the engine safely** against throwaway folders with `-DryRun` and/or a
    temporary fake save folder — never your real saves.
-5. Keep **PowerShell 5.1 compatibility** (don't rely on PS7-only syntax).
-6. Avoid risky Unicode glyphs in source; build them by char code as the existing
+6. Keep **PowerShell 5.1 compatibility** (don't rely on PS7-only syntax).
+7. Avoid risky Unicode glyphs in source; build them by char code as the existing
    code does (e.g. `[char]0x25B6`).
-7. If you change the UI, mention that the screenshot may need updating.
-8. If you add a config key, give it a **backward-compatible default** in
+8. If you change the UI, refresh `screenshot.png` with neutral/sample paths.
+9. If you add a config key, give it a **backward-compatible default** in
    `Import-BackupConfig` and document it in the README.
 
 ## Commit / PR style

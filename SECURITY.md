@@ -27,6 +27,10 @@ By design:
 
 The latest release receives fixes. Older versions are not maintained.
 
+| Version | Supported |
+|---|---|
+| v1.0.0 | Yes |
+
 ## Reporting a vulnerability
 
 If you find a security issue (for example, a path-handling bug that could cause

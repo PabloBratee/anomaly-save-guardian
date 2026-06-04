@@ -86,4 +86,7 @@ your existing `stalker-gamma-backup-config.json` keeps working.
 - Automatic backup still only reads and copies original saves.
 - Added safe fake-save release tests for backup copying, retention, milestones,
   config errors, extension filtering, zip mode and guided restore behavior.
+- Release ZIP: `STALKER-GAMMA-Save-Backup-v1.0.0.zip`.
+- SHA256:
+  `BB41AAB5214CBE7DD8F7CD1E3251B82ECD7A1B4DE1F023C0A43F1E2655BC8E6C`.
 - Created by GAM33RSFR33AK.

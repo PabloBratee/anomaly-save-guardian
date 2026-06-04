@@ -9,15 +9,16 @@ What problem does it solve?
 ## Checklist
 
 - [ ] `.\scripts\check-syntax.ps1` passes (all `.ps1` parse cleanly)
+- [ ] `.\scripts\test-ui-single-instance.ps1` passes
 - [ ] `.\scripts\test-release.ps1` passes using temporary fake saves only
 - [ ] `.\scripts\test-restore.ps1` passes using temporary fake saves only
-- [ ] UI still constructs: `powershell -STA -ExecutionPolicy Bypass -File .\stalker-gamma-backup-ui.ps1 -NoShow`
+- [ ] UI still constructs: `powershell -STA -NoProfile -ExecutionPolicy Bypass -File .\stalker-gamma-backup-ui.ps1 -NoShow`
 - [ ] No external dependencies added (built-in PowerShell 5.1 / .NET only)
 - [ ] Original saves are still only ever read/copied — never modified, moved, renamed, or deleted
 - [ ] Backup logic stays in `backup-stalker-gamma-saves.ps1` (UI doesn't reimplement it)
 - [ ] CLI usage of the engine still works
 - [ ] `CHANGELOG.md` updated (if user-facing)
-- [ ] README updated and screenshot noted as needing a refresh (if the UI changed)
+- [ ] README updated and `screenshot.png` refreshed with neutral/sample paths (if the UI changed)
 - [ ] New config keys (if any) have backward-compatible defaults and are documented
 
 ## How did you test it?

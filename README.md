@@ -54,8 +54,8 @@ Created by GAM33RSFR33AK.
 ## Quick start
 
 1. **Get the files** into one folder (anywhere):
-   - **Easiest:** download the latest release `.zip` from the
-     [Releases page](https://github.com/PabloBratee/anomaly-save-guardian/releases)
+   - **Easiest:** download `STALKER-GAMMA-Save-Backup-v1.0.0.zip` from the
+     [v1.0.0 GitHub Release](https://github.com/PabloBratee/anomaly-save-guardian/releases/tag/v1.0.0)
      and extract it, **or**
    - clone the repo:
      ```
@@ -369,27 +369,18 @@ issues.
 
 ## Releases
 
-Want to publish or grab a clean download?
+Current public release:
 
 - First public release: **v1.0.0**
 - Release ZIP: `STALKER-GAMMA-Save-Backup-v1.0.0.zip`
-- **For users:** download the latest `.zip` from the
-  [Releases page](https://github.com/PabloBratee/anomaly-save-guardian/releases),
-  extract it anywhere, and follow [Quick start](#quick-start).
-- **For maintainers:** build a clean release package (only the files users need —
-  never your personal config, logs, or backups):
-  ```powershell
-  .\scripts\package-release.ps1
-  ```
-  This creates `dist\STALKER-GAMMA-Save-Backup-v1.0.0.zip` and prints the exact
-  steps to tag and publish a GitHub Release:
-  ```powershell
-  git push origin main
-  git tag v1.0.0
-  git push origin v1.0.0
-  ```
-  The `dist\` folder is git-ignored. For the full v1.0.0 checklist, see
-  [docs/release-checklist.md](docs/release-checklist.md).
+- GitHub Release:
+  [Anomaly Save Guardian v1.0.0](https://github.com/PabloBratee/anomaly-save-guardian/releases/tag/v1.0.0)
+- SHA256:
+  `BB41AAB5214CBE7DD8F7CD1E3251B82ECD7A1B4DE1F023C0A43F1E2655BC8E6C`
+
+Download the release zip, extract it anywhere, and start with the included
+`Launch STALKER GAMMA Save Backup.cmd` launcher. The release record is in
+[docs/release-checklist.md](docs/release-checklist.md).
 
 ---
 
