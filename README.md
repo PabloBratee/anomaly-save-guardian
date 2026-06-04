@@ -302,6 +302,9 @@ The desktop-shortcut command above does this for you automatically.
 minimize button send it to the **system tray**, so it keeps backing up.
 Double-click the tray icon to reopen it, or right-click → **Exit** to quit fully.
 
+**The app says it is already running.** Only one app instance can run at a time.
+If the window looks closed, check the system tray and use the existing tray icon.
+
 **Status says “Waiting for backup drive”.** The drive holding your backup folder
 isn't connected. Plug it in — watching resumes and backs up automatically. You
 don't need to restart the app.

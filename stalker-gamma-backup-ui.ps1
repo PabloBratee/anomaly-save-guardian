@@ -25,6 +25,75 @@ Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
 
+$script:SingleInstanceMutexName = 'Global\AnomalySaveGuardian_GAM33RSFR33AK'
+$script:SingleInstanceMutex = $null
+$script:SingleInstanceMutexAcquired = $false
+
+function Show-SingleInstanceMessage {
+    param([Parameter(Mandatory)] [string] $Message)
+
+    if ($NoShow) {
+        Write-Host $Message
+        return
+    }
+
+    try {
+        [System.Windows.Forms.MessageBox]::Show(
+            $Message,
+            'Anomaly Save Guardian',
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Information) | Out-Null
+    }
+    catch {
+        Write-Host $Message
+    }
+}
+
+function Release-SingleInstanceGuard {
+    if ($script:SingleInstanceMutex) {
+        try {
+            if ($script:SingleInstanceMutexAcquired) {
+                $script:SingleInstanceMutex.ReleaseMutex()
+            }
+        }
+        catch { }
+        finally {
+            $script:SingleInstanceMutexAcquired = $false
+            $script:SingleInstanceMutex.Dispose()
+            $script:SingleInstanceMutex = $null
+        }
+    }
+}
+
+function Initialize-SingleInstanceGuard {
+    try {
+        $script:SingleInstanceMutex = New-Object System.Threading.Mutex($false, $script:SingleInstanceMutexName)
+        try {
+            $script:SingleInstanceMutexAcquired = $script:SingleInstanceMutex.WaitOne(0, $false)
+        }
+        catch [System.Threading.AbandonedMutexException] {
+            $script:SingleInstanceMutexAcquired = $true
+        }
+    }
+    catch {
+        Show-SingleInstanceMessage "Anomaly Save Guardian could not verify whether another instance is already running.`n`n$($_.Exception.Message)"
+        Release-SingleInstanceGuard
+        return $false
+    }
+
+    if (-not $script:SingleInstanceMutexAcquired) {
+        Show-SingleInstanceMessage 'Anomaly Save Guardian is already running. Check the system tray.'
+        Release-SingleInstanceGuard
+        return $false
+    }
+
+    return $true
+}
+
+if (-not (Initialize-SingleInstanceGuard)) {
+    return
+}
+
 # Encoding-safe glyphs (built by char code so the file stays ASCII-clean).
 $symPlay = [string][char]0x25B6   # play  (start)
 $symStop = [string][char]0x25A0   # stop
@@ -41,6 +110,7 @@ if (-not (Test-Path -LiteralPath $corePath)) {
     [System.Windows.Forms.MessageBox]::Show(
         "Could not find:`n$corePath`n`nKeep this app in the same folder as the backup script.",
         'STALKER GAMMA Save Backup', 'OK', 'Error') | Out-Null
+    Release-SingleInstanceGuard
     return
 }
 . $corePath -AsLibrary
@@ -50,6 +120,7 @@ if (-not (Test-Path -LiteralPath $restoreCorePath)) {
     [System.Windows.Forms.MessageBox]::Show(
         "Could not find:`n$restoreCorePath`n`nKeep this app in the same folder as the restore helper.",
         'STALKER GAMMA Save Backup', 'OK', 'Error') | Out-Null
+    Release-SingleInstanceGuard
     return
 }
 . $restoreCorePath -AsLibrary
@@ -72,6 +143,7 @@ catch {
     [System.Windows.Forms.MessageBox]::Show(
         "There is a problem with the config file:`n`n$($_.Exception.Message)`n`nFile: $($script:ConfigPath)",
         'STALKER GAMMA Save Backup', 'OK', 'Error') | Out-Null
+    Release-SingleInstanceGuard
     return
 }
 
@@ -1025,6 +1097,7 @@ $form.Add_FormClosing({
 })
 $form.Add_FormClosed({
     try { if ($script:Notify) { $script:Notify.Visible = $false; $script:Notify.Dispose() } } catch { }
+    Release-SingleInstanceGuard
 })
 
 # Show onboarding once the window is up, on first run or if setup looks incomplete.
@@ -1050,4 +1123,5 @@ if (-not $NoShow) {
 else {
     Write-Host 'UI constructed successfully (NoShow).'
     try { if ($script:Notify) { $script:Notify.Visible = $false; $script:Notify.Dispose() } } catch { }
+    Release-SingleInstanceGuard
 }
