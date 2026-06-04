@@ -76,9 +76,8 @@ your existing `stalker-gamma-backup-config.json` keeps working.
   saves; milestones and pre-restore safety backups are kept separately.
 - Zip mode now stores one complete logical save group per `.zip`, with `.scop`,
   `.scoc` and optional `.dds` together.
-- Rapid manual backups or milestones that land in the same second now get a
-  `__002`-style suffix instead of overwriting an existing backup with the same
-  timestamp.
+- Milestone snapshots that land in the same second keep `__002`-style collision
+  suffixes instead of overwriting an existing permanent snapshot.
 - Expanded README with *Recommended setup*, *Troubleshooting*, *Safety* and
   *Releases* sections; refreshed screenshot.
 - `&` now renders literally in labels and headers (no accidental mnemonics).
@@ -98,6 +97,8 @@ your existing `stalker-gamma-backup-config.json` keeps working.
 - Added safe fake-save release tests for logical save grouping, rolling
   replacement, retention, milestones, config errors, extension filtering, grouped
   zip mode and guided restore behavior.
+- Complete `.scop` + `.scoc` groups are no longer falsely reported as missing a
+  pair in restore discovery; `.dds` remains optional.
 - Release ZIP: `Anomaly-Save-Guardian-v1.0.0.zip`.
 - SHA256: published on the
   [v1.0.0 release page](https://github.com/PabloBratee/anomaly-save-guardian/releases/tag/v1.0.0).

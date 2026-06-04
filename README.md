@@ -195,7 +195,7 @@ Use **Settings** in the app (recommended), or edit
 | `includeExtensions` | File types that make up a save. `.scop` + `.scoc` are a full save; `.dds` is the optional thumbnail. They are grouped by save name. |
 | `backupDelaySeconds` | Settle time after a change before copying, so a save's files are backed up together once they finish writing. |
 | `keepMaxBackupsPerSave` | How many different logical saves to keep. Rolling backups keep the **newest** backup per save name; this caps how many distinct save names are retained. The key name is kept for backward compatibility. Milestones and pre-restore safety backups are kept separately. |
-| `enableZipBackup` | `true` = store each backup as a `.zip`; `false` = plain copy (easiest to restore). |
+| `enableZipBackup` | `true` = store each complete logical save group as one `.zip`; `false` = plain copy (easiest to restore). |
 | `logFilePath` | Where the log is written. |
 
 In raw JSON, Windows paths need **doubled** backslashes (`\\`). The Settings
@@ -276,10 +276,11 @@ The engine works without the GUI:
 .\backup-stalker-gamma-saves.ps1 -Watch -DryRun        # preview events live
 ```
 
-Backups are named `OriginalSaveName__YYYY-MM-DD_HH-mm-ss.ext`
-(e.g. `quicksave__2026-06-04_22-30-15.scop`). If you create two backups with
-the same timestamp, the later one gets a suffix such as
-`quicksave__2026-06-04_22-30-15__002.scop` instead of overwriting the first.
+Normal rolling backups are named `OriginalSaveName__YYYY-MM-DD_HH-mm.ext`
+(for example, `quicksave__2026-06-04_22-30.scop`) and the newest backup for a
+save name replaces the previous rolling backup for that same save name. Milestone
+snapshots use second-precision names and keep collision suffixes such as
+`__002` when needed, because milestones are permanent.
 
 ---
 
