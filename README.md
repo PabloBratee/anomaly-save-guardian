@@ -1,7 +1,7 @@
-# STALKER GAMMA Save Backup
+# Anomaly Save Guardian
 
 A small, dependency-free **Windows** app that automatically backs up your
-**S.T.A.L.K.E.R. GAMMA / Anomaly** save files. It watches your save folder and
+**S.T.A.L.K.E.R. Anomaly / GAMMA** save files. It watches your save folder and
 copies every new or changed save the moment it appears — so a bad death, a
 crash, or a corrupt save never costs you a run.
 
@@ -9,7 +9,7 @@ Built entirely on **built-in PowerShell / .NET** — nothing to install.
 
 Created by GAM33RSFR33AK.
 
-![The STALKER GAMMA Save Backup app, watching and backing up saves](screenshot.png)
+![Anomaly Save Guardian, watching and backing up saves](screenshot.png)
 
 > **🛡️ Safe by design:** automatic backups only read and copy your original
 > saves. Restores are guided, ask for confirmation, and create a pre-restore
@@ -54,7 +54,7 @@ Created by GAM33RSFR33AK.
 ## Quick start
 
 1. **Get the files** into one folder (anywhere):
-   - **Easiest:** download `STALKER-GAMMA-Save-Backup-v1.0.0.zip` from the
+   - **Easiest:** download `Anomaly-Save-Guardian-v1.0.0.zip` from the
      [v1.0.0 GitHub Release](https://github.com/PabloBratee/anomaly-save-guardian/releases/tag/v1.0.0)
      and extract it, **or**
    - clone the repo:
@@ -64,10 +64,10 @@ Created by GAM33RSFR33AK.
    The folder must contain at least:
    - `backup-stalker-gamma-saves.ps1`
    - `stalker-gamma-backup-ui.ps1`
-   - `Launch STALKER GAMMA Save Backup.cmd`
+   - `Start-Anomaly-Save-Guardian.vbs`
    - `stalker-gamma-backup-config.example.json`
-   - `stalker-gamma-backup.ico`
-2. **Run** `Launch STALKER GAMMA Save Backup.cmd` (double-click it), or make a
+   - `anomaly-save-guardian.ico`
+2. **Run** `Start-Anomaly-Save-Guardian.vbs` (double-click it), or make a
    shortcut — see below. On first run it creates your personal
    `stalker-gamma-backup-config.json` and shows a short **welcome** that walks
    you through setup.
@@ -83,12 +83,17 @@ Created by GAM33RSFR33AK.
 
 ### Launch it like an app
 
-The folder ships with a double-clickable launcher so you don't have to touch
-PowerShell or change system execution policy:
+The folder ships with launchers so you don't have to touch PowerShell or change
+your system execution policy:
 
-- **`Launch STALKER GAMMA Save Backup.cmd`** — just double-click it. It finds
-  its own folder, so it works wherever you put the files, and starts the app
-  with no console window.
+- **`Start-Anomaly-Save-Guardian.vbs`** *(recommended)* — just double-click it.
+  It finds its own folder, so it works wherever you put the files, and starts the
+  app **with no PowerShell console window** left open in the background — only the
+  Anomaly Save Guardian window and its tray icon appear.
+- **`Launch-Anomaly-Save-Guardian.cmd`** — a fallback launcher kept for
+  troubleshooting. Use it if the `.vbs` is blocked on your system.
+- **Advanced:** you can still run `stalker-gamma-backup-ui.ps1` directly from
+  PowerShell if you prefer.
 
 ### Create a desktop shortcut
 
@@ -98,19 +103,19 @@ Easiest — run the included helper once from the app folder (double-click it):
 Create-Desktop-Shortcut.ps1
 ```
 
-It drops a proper **STALKER GAMMA Save Backup** shortcut on your Desktop, icon
-and all, pointing at this folder. (If Windows blocks it, right-click → **Run
-with PowerShell**, or use the bypass command in
+It drops a proper **Anomaly Save Guardian** shortcut on your Desktop, icon and
+all, pointing at this folder and the no-console launcher. (If Windows blocks it,
+right-click → **Run with PowerShell**, or use the bypass command in
 [Troubleshooting](#troubleshooting).)
 
 Prefer to do it by hand? Right-click your Desktop → **New → Shortcut**, and use:
 
 ```
-powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "FULL\PATH\TO\stalker-gamma-backup-ui.ps1"
+wscript.exe "FULL\PATH\TO\Start-Anomaly-Save-Guardian.vbs"
 ```
 
 Replace `FULL\PATH\TO` with the folder you saved the files in (keep the quotes —
-they matter if the path has spaces). Set the icon to `stalker-gamma-backup.ico`
+they matter if the path has spaces). Set the icon to `anomaly-save-guardian.ico`
 via the shortcut's **Properties → Change Icon**.
 
 ---
@@ -372,15 +377,15 @@ issues.
 Current public release:
 
 - First public release: **v1.0.0**
-- Release ZIP: `STALKER-GAMMA-Save-Backup-v1.0.0.zip`
+- Release ZIP: `Anomaly-Save-Guardian-v1.0.0.zip`
 - GitHub Release:
   [Anomaly Save Guardian v1.0.0](https://github.com/PabloBratee/anomaly-save-guardian/releases/tag/v1.0.0)
-- SHA256:
-  `BB41AAB5214CBE7DD8F7CD1E3251B82ECD7A1B4DE1F023C0A43F1E2655BC8E6C`
+- SHA256: see the **Verification** section on the
+  [v1.0.0 release page](https://github.com/PabloBratee/anomaly-save-guardian/releases/tag/v1.0.0)
 
 Download the release zip, extract it anywhere, and start with the included
-`Launch STALKER GAMMA Save Backup.cmd` launcher. The release record is in
-[docs/release-checklist.md](docs/release-checklist.md).
+`Start-Anomaly-Save-Guardian.vbs` launcher (no console window). The release
+record is in [docs/release-checklist.md](docs/release-checklist.md).
 
 ---
 
@@ -390,11 +395,13 @@ Download the release zip, extract it anywhere, and start with the included
 backup-stalker-gamma-saves.ps1          # backup engine + CLI (also a library)
 restore-stalker-gamma-saves.ps1         # restore discovery, validation and copy helpers
 stalker-gamma-backup-ui.ps1             # the GUI app
-Launch STALKER GAMMA Save Backup.cmd    # double-click launcher
+Start-Anomaly-Save-Guardian.vbs         # no-console launcher (recommended)
+Launch-Anomaly-Save-Guardian.cmd        # fallback / troubleshooting launcher
 Create-Desktop-Shortcut.ps1             # desktop shortcut helper
 stalker-gamma-backup-config.example.json# template (committed)
 stalker-gamma-backup-config.json        # your personal config (git-ignored)
-stalker-gamma-backup.ico                # app/tray icon
+anomaly-save-guardian.ico               # app/tray icon
+assets/                                 # icon source (.svg) + icon generator
 scripts/check-syntax.ps1                # parse-check all .ps1 files
 scripts/test-release.ps1                # safe fake-save release tests
 scripts/test-restore.ps1                # safe fake-save restore tests

@@ -7,12 +7,18 @@ The first public release, `v1.0.0`, has already been published.
 - Release commit: `2727f2d9bc5cf917fbf7f4c18cd4b569d072ab54`
 - Release page:
   `https://github.com/PabloBratee/anomaly-save-guardian/releases/tag/v1.0.0`
-- Release ZIP: `STALKER-GAMMA-Save-Backup-v1.0.0.zip`
+- Release ZIP: `Anomaly-Save-Guardian-v1.0.0.zip`
 - SHA256:
-  `BB41AAB5214CBE7DD8F7CD1E3251B82ECD7A1B4DE1F023C0A43F1E2655BC8E6C`
+  `603435B7144C8866C36F2C9C8E370CFB9C3B8750BCB4FA7F6BDE2DD14F3BADD8`
 
-Do not recreate the tag, republish the release, or replace the release asset
-unless intentionally preparing a new release.
+> **v1.0.0 refresh:** the release was refreshed in place (still tag `v1.0.0`) to
+> apply the **Anomaly Save Guardian** branding, the no-console
+> `Start-Anomaly-Save-Guardian.vbs` launcher, the new app icon and the
+> `Anomaly-Save-Guardian-v1.0.0.zip` package name. The tag was not moved or
+> recreated; only the release asset and notes were updated.
+
+Do not recreate the tag or create a new release unless intentionally preparing a
+new version.
 
 ## v1.0.0 validation
 
@@ -30,7 +36,8 @@ unless intentionally preparing a new release.
   ```powershell
   .\scripts\package-release.ps1
   ```
-- `dist\STALKER-GAMMA-Save-Backup-v1.0.0.zip` was inspected before upload.
-- The zip contains `restore-stalker-gamma-saves.ps1` and does not
+- `dist\Anomaly-Save-Guardian-v1.0.0.zip` was inspected before upload.
+- The zip contains `restore-stalker-gamma-saves.ps1`,
+  `Start-Anomaly-Save-Guardian.vbs` and `anomaly-save-guardian.ico`, and does not
   contain personal config, logs, temp folders, `.git`, `.github`, tests or a
   nested `dist` folder.

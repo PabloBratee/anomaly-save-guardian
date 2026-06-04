@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Desktop app (GUI) for STALKER GAMMA Save Backup.
+    Desktop app (GUI) for Anomaly Save Guardian.
 
 .DESCRIPTION
     A small, dark-themed window that automatically backs up your STALKER GAMMA /
@@ -109,7 +109,7 @@ $corePath  = Join-Path $scriptDir 'backup-stalker-gamma-saves.ps1'
 if (-not (Test-Path -LiteralPath $corePath)) {
     [System.Windows.Forms.MessageBox]::Show(
         "Could not find:`n$corePath`n`nKeep this app in the same folder as the backup script.",
-        'STALKER GAMMA Save Backup', 'OK', 'Error') | Out-Null
+        'Anomaly Save Guardian', 'OK', 'Error') | Out-Null
     Release-SingleInstanceGuard
     return
 }
@@ -119,7 +119,7 @@ $restoreCorePath = Join-Path $scriptDir 'restore-stalker-gamma-saves.ps1'
 if (-not (Test-Path -LiteralPath $restoreCorePath)) {
     [System.Windows.Forms.MessageBox]::Show(
         "Could not find:`n$restoreCorePath`n`nKeep this app in the same folder as the restore helper.",
-        'STALKER GAMMA Save Backup', 'OK', 'Error') | Out-Null
+        'Anomaly Save Guardian', 'OK', 'Error') | Out-Null
     Release-SingleInstanceGuard
     return
 }
@@ -142,7 +142,7 @@ try {
 catch {
     [System.Windows.Forms.MessageBox]::Show(
         "There is a problem with the config file:`n`n$($_.Exception.Message)`n`nFile: $($script:ConfigPath)",
-        'STALKER GAMMA Save Backup', 'OK', 'Error') | Out-Null
+        'Anomaly Save Guardian', 'OK', 'Error') | Out-Null
     Release-SingleInstanceGuard
     return
 }
@@ -253,7 +253,7 @@ function Set-PathLabel {
 # Main window
 # ---------------------------------------------------------------------------
 $form = New-Object System.Windows.Forms.Form
-$form.Text            = 'STALKER GAMMA Save Backup'
+$form.Text            = 'Anomaly Save Guardian'
 $form.ClientSize      = New-Object System.Drawing.Size(700, 640)
 $form.StartPosition   = 'CenterScreen'
 $form.FormBorderStyle = 'FixedSingle'
@@ -262,14 +262,14 @@ $form.BackColor       = $cBg
 $form.Font            = $fBody
 $form.KeyPreview      = $true
 
-$icoPath = Join-Path $scriptDir 'stalker-gamma-backup.ico'
+$icoPath = Join-Path $scriptDir 'anomaly-save-guardian.ico'
 if (Test-Path -LiteralPath $icoPath) { try { $form.Icon = New-Object System.Drawing.Icon $icoPath } catch { } }
 
 # --- Header ---
 $header  = New-Panel 0 0 700 72 $cHeader
 $hAccent = New-Panel 0 0 700 3 $cAccent
-$hTitle1 = New-Label 'STALKER GAMMA' 18 13 210 28 $cAccent $fTitle
-$hTitle2 = New-Label 'SAVE BACKUP'   234 18 230 24 $cText  $fTitle2
+$hTitle1 = New-Label 'ANOMALY'        18 13 130 28 $cAccent $fTitle
+$hTitle2 = New-Label 'SAVE GUARDIAN' 150 18 200 24 $cText   $fTitle2
 $hSub    = New-Label 'Automatic save protection - never lose a run' 20 45 440 16 $cMuted $fSub
 $hVer    = New-Label ("v{0}" -f $script:AppVersion) 596 14 90 18 $cFaint $fSmall 'TopRight'
 $header.Controls.AddRange(@($hAccent, $hTitle1, $hTitle2, $hSub, $hVer))
@@ -405,7 +405,7 @@ function Set-AppState {
     $stateSub.Text         = $sub
     $dot.ForeColor         = $col
     $accentStrip.BackColor = $col
-    if ($script:Notify) { $script:Notify.Text = "STALKER GAMMA Backup - $title" }
+    if ($script:Notify) { $script:Notify.Text = "Anomaly Save Guardian - $title" }
 }
 
 function Update-Info {
@@ -1083,7 +1083,7 @@ try {
     elseif ($form.Icon)                  { $script:Notify.Icon = $form.Icon }
     else                                 { $script:Notify.Icon = [System.Drawing.SystemIcons]::Application }
 } catch { $script:Notify.Icon = [System.Drawing.SystemIcons]::Application }
-$script:Notify.Text             = 'STALKER GAMMA Backup - Idle'
+$script:Notify.Text             = 'Anomaly Save Guardian - Idle'
 $script:Notify.ContextMenuStrip = $trayMenu
 $script:Notify.Visible          = $true
 $script:Notify.Add_DoubleClick({ Show-Window })

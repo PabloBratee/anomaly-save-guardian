@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Safe restore helpers for STALKER GAMMA Save Backup.
+    Safe restore helpers for Anomaly Save Guardian.
 .DESCRIPTION
     Discovers restore points created by backup-stalker-gamma-saves.ps1 and
     restores a selected complete .scop + .scoc pair after first creating a
@@ -308,6 +308,9 @@ function Expand-ZipRestoreSources {
     param(
         [Parameter(Mandatory)] $RestorePoint
     )
+    # FileSystem gives ZipFile; the base assembly gives ZipArchive/ZipArchiveEntry
+    # (not auto-loaded on Windows PowerShell 5.1).
+    Add-Type -AssemblyName System.IO.Compression -ErrorAction SilentlyContinue
     Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
     $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("sgb-restore-zip-{0}" -f ([guid]::NewGuid().ToString('N')))
     New-Item -ItemType Directory -Path $tempRoot -Force | Out-Null

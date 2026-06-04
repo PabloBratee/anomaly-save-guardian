@@ -3,9 +3,10 @@
     Build a clean release .zip containing only the files users need to download.
 
 .DESCRIPTION
-    Creates 'dist\STALKER-GAMMA-Save-Backup-vX.Y.Z.zip' next to the repo, holding
-    just the runtime scripts, the example config, the icon and the user-facing
-    docs - never your personal config, logs, backups, screenshots or git data.
+    Creates 'dist\Anomaly-Save-Guardian-vX.Y.Z.zip' next to the repo, holding
+    just the runtime scripts, the launchers, the example config, the icon and the
+    user-facing docs - never your personal config, logs, backups, screenshots or
+    git data.
 
     Pure built-in PowerShell / .NET - no build tools or external dependencies.
     The 'dist' folder is git-ignored.
@@ -43,8 +44,9 @@ $include = @(
     'restore-stalker-gamma-saves.ps1',
     'stalker-gamma-backup-ui.ps1',
     'stalker-gamma-backup-config.example.json',
-    'stalker-gamma-backup.ico',
-    'Launch STALKER GAMMA Save Backup.cmd',
+    'anomaly-save-guardian.ico',
+    'Start-Anomaly-Save-Guardian.vbs',
+    'Launch-Anomaly-Save-Guardian.cmd',
     'Create-Desktop-Shortcut.ps1',
     'README.md',
     'CHANGELOG.md',
@@ -66,7 +68,7 @@ if (-not (Test-Path -LiteralPath $distDir)) {
     New-Item -ItemType Directory -Path $distDir -Force | Out-Null
 }
 
-$zipName = "STALKER-GAMMA-Save-Backup-v$Version.zip"
+$zipName = "Anomaly-Save-Guardian-v$Version.zip"
 $zipPath = Join-Path $distDir $zipName
 if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath -Force }
 

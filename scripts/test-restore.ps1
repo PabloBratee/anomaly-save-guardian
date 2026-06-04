@@ -106,6 +106,8 @@ function New-ZipFromText {
         [Parameter(Mandatory)] [string] $ZipPath,
         [Parameter(Mandatory)] [hashtable] $Entries
     )
+    # The base assembly (ZipArchiveMode) is not auto-loaded on Windows PowerShell 5.1.
+    Add-Type -AssemblyName System.IO.Compression -ErrorAction SilentlyContinue
     Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
     $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("sgb-zip-src-{0}" -f ([guid]::NewGuid().ToString('N')))
     New-Item -ItemType Directory -Path $tmp -Force | Out-Null

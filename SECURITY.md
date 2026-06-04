@@ -2,7 +2,7 @@
 
 ## Scope & safety model
 
-STALKER GAMMA Save Backup runs locally on your PC using built-in Windows
+Anomaly Save Guardian runs locally on your PC using built-in Windows
 PowerShell / .NET. It has **no network features**, no telemetry, and no external
 dependencies.
 

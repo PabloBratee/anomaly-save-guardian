@@ -389,6 +389,59 @@ try {
         Assert-True ($combined -notmatch $staleSaveFilesPattern) 'Stale save-file default wording remains.'
     }
 
+    Invoke-Test 'UI uses the Anomaly Save Guardian name, not the old product title' {
+        $uiSource = Get-Content -LiteralPath $uiPath -Raw
+
+        Assert-True ($uiSource -like "*`$form.Text            = 'Anomaly Save Guardian'*") 'Title bar should be set to Anomaly Save Guardian.'
+        Assert-True ($uiSource -like "*New-Label 'ANOMALY'*") 'Header should render the ANOMALY accent label.'
+        Assert-True ($uiSource -like "*New-Label 'SAVE GUARDIAN'*") 'Header should render the SAVE GUARDIAN label.'
+        Assert-True ($uiSource -like '*anomaly-save-guardian.ico*') 'UI should reference the new icon asset.'
+        Assert-True ($uiSource -notlike '*STALKER GAMMA Save Backup*') 'Old product title must not be used in the UI.'
+        Assert-True ($uiSource -notlike "*New-Label 'SAVE BACKUP'*") 'Old SAVE BACKUP header must not be used.'
+    }
+
+    Invoke-Test 'no-console VBS launcher exists and targets the UI relative to itself' {
+        $vbsPath = Join-Path $repoRoot 'Start-Anomaly-Save-Guardian.vbs'
+        Assert-True (Test-Path -LiteralPath $vbsPath) 'Start-Anomaly-Save-Guardian.vbs should exist.'
+        $vbs = Get-Content -LiteralPath $vbsPath -Raw
+
+        Assert-True ($vbs -like '*stalker-gamma-backup-ui.ps1*') 'VBS launcher should reference the UI script.'
+        Assert-True ($vbs -like '*GetParentFolderName*') 'VBS launcher should locate the UI relative to its own folder.'
+        Assert-True ($vbs -like '*CurrentDirectory*') 'VBS launcher should set the working directory to the app folder.'
+        Assert-True ($vbs -like '*-WindowStyle Hidden*') 'VBS launcher should start PowerShell with a hidden window.'
+        Assert-True ($vbs -like '*-STA*') 'VBS launcher should start PowerShell in STA mode.'
+        Assert-True ($vbs -like '*"""*') 'VBS launcher should quote the UI path so paths with spaces work.'
+        Assert-True ($vbs -like '*shell.Run command, 0,*') 'VBS launcher should run hidden (window style 0).'
+    }
+
+    Invoke-Test 'fallback .cmd launcher and new icon asset remain available' {
+        Assert-True (Test-Path -LiteralPath (Join-Path $repoRoot 'Launch-Anomaly-Save-Guardian.cmd')) 'Fallback .cmd launcher should exist.'
+        Assert-True (Test-Path -LiteralPath (Join-Path $repoRoot 'anomaly-save-guardian.ico')) 'New app icon should exist.'
+    }
+
+    Invoke-Test 'package script ships the VBS launcher and the new zip name' {
+        $pkg = Get-Content -LiteralPath (Join-Path $repoRoot 'scripts\package-release.ps1') -Raw
+
+        Assert-True ($pkg -like '*Start-Anomaly-Save-Guardian.vbs*') 'Package should include the VBS launcher.'
+        Assert-True ($pkg -like '*Launch-Anomaly-Save-Guardian.cmd*') 'Package should include the fallback .cmd launcher.'
+        Assert-True ($pkg -like '*anomaly-save-guardian.ico*') 'Package should include the new icon asset.'
+        Assert-True ($pkg -like '*Anomaly-Save-Guardian-v$Version.zip*') 'Package zip should use the Anomaly Save Guardian name.'
+        Assert-True ($pkg -notlike '*STALKER-GAMMA-Save-Backup*') 'Package script must not reference the old zip name.'
+    }
+
+    Invoke-Test 'no stale STALKER-GAMMA-Save-Backup package name in docs or scripts' {
+        $paths = @(
+            (Join-Path $repoRoot 'README.md'),
+            (Join-Path $repoRoot 'CHANGELOG.md'),
+            (Join-Path $repoRoot 'CONTRIBUTING.md'),
+            (Join-Path $repoRoot 'docs\release-checklist.md'),
+            (Join-Path $repoRoot 'scripts\package-release.ps1')
+        )
+        $combined = ($paths | ForEach-Object { Get-Content -LiteralPath $_ -Raw }) -join "`n"
+
+        Assert-True ($combined -notmatch 'STALKER-GAMMA-Save-Backup') 'Stale STALKER-GAMMA-Save-Backup package name remains in docs/scripts.'
+    }
+
     Invoke-Test 'include extensions are respected' {
         $root = New-TestRoot
         $cfg = Initialize-TestConfig -Root $root -Extensions @('.scop')

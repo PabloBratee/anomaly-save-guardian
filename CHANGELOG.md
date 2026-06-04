@@ -5,7 +5,7 @@ All notable changes to this project are documented here. This project follows
 
 ## [1.0.0] - 2026-06-04
 
-First public release of STALKER GAMMA Save Backup. A polished, dependency-free
+First public release of Anomaly Save Guardian. A polished, dependency-free
 Windows PowerShell / .NET WinForms app for automatically backing up and safely
 restoring S.T.A.L.K.E.R. Anomaly / GAMMA save files.
 
@@ -39,8 +39,14 @@ your existing `stalker-gamma-backup-config.json` keeps working.
   request template.
 - Automatic backup engine (`backup-stalker-gamma-saves.ps1`) with watch,
   one-time, milestone and dry-run modes.
-- Desktop GUI (`stalker-gamma-backup-ui.ps1`) with a dark theme, live activity
-  log, and a double-click launcher.
+- Desktop GUI (`stalker-gamma-backup-ui.ps1`) with a dark theme and live activity
+  log, branded **Anomaly Save Guardian** in the title bar, header and tray.
+- **No-console launcher** (`Start-Anomaly-Save-Guardian.vbs`) for normal use:
+  starts the app with no PowerShell console window left open. The
+  `Launch-Anomaly-Save-Guardian.cmd` launcher remains as a troubleshooting
+  fallback.
+- **App icon** (`anomaly-save-guardian.ico`): a protective shield with a circular
+  restore arrow, used by the window, tray and desktop shortcut.
 - **Settings dialog** to change save / backup / milestone / log folders,
   extensions, retention, delay and zip mode without editing JSON.
 - **System tray** support: minimise or close (X) to tray, double-click to
@@ -86,7 +92,7 @@ your existing `stalker-gamma-backup-config.json` keeps working.
 - Automatic backup still only reads and copies original saves.
 - Added safe fake-save release tests for backup copying, retention, milestones,
   config errors, extension filtering, zip mode and guided restore behavior.
-- Release ZIP: `STALKER-GAMMA-Save-Backup-v1.0.0.zip`.
-- SHA256:
-  `BB41AAB5214CBE7DD8F7CD1E3251B82ECD7A1B4DE1F023C0A43F1E2655BC8E6C`.
+- Release ZIP: `Anomaly-Save-Guardian-v1.0.0.zip`.
+- SHA256: published on the
+  [v1.0.0 release page](https://github.com/PabloBratee/anomaly-save-guardian/releases/tag/v1.0.0).
 - Created by GAM33RSFR33AK.

@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for your interest in improving **STALKER GAMMA Save Backup**! This is a
+Thanks for your interest in improving **Anomaly Save Guardian**! This is a
 small, dependency-free tool and the goal is to keep it that way: simple,
 portable, and safe for non-technical players.
 
@@ -23,7 +23,8 @@ portable, and safe for non-technical players.
 | `backup-stalker-gamma-saves.ps1` | Backup engine + CLI (also dot-sourced as a library by the UI). |
 | `restore-stalker-gamma-saves.ps1` | Restore discovery, validation, safety backup and copy helpers. |
 | `stalker-gamma-backup-ui.ps1` | The WinForms desktop app. |
-| `Launch STALKER GAMMA Save Backup.cmd` | Portable double-click launcher. |
+| `Start-Anomaly-Save-Guardian.vbs` | No-console launcher (recommended for normal use). |
+| `Launch-Anomaly-Save-Guardian.cmd` | Fallback / troubleshooting launcher. |
 | `Create-Desktop-Shortcut.ps1` | Desktop shortcut helper. |
 | `stalker-gamma-backup-config.example.json` | Config template (committed). |
 | `scripts/check-syntax.ps1` | Parse-checks every `.ps1`. Run before pushing. |

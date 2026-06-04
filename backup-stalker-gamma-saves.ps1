@@ -339,6 +339,9 @@ function New-ZipBackup {
         [Parameter(Mandatory)] [string] $DestinationZip
     )
     try {
+        # FileSystem gives ZipFile/ZipFileExtensions; the base assembly gives
+        # ZipArchive/ZipArchiveMode (not auto-loaded on Windows PowerShell 5.1).
+        Add-Type -AssemblyName System.IO.Compression -ErrorAction SilentlyContinue
         Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
         if (Test-Path -LiteralPath $DestinationZip) {
             Remove-Item -LiteralPath $DestinationZip -Force
@@ -842,7 +845,7 @@ function Show-StartupSummary {
 
     Write-Host ''
     Write-Host '=====================================================' -ForegroundColor DarkCyan
-    Write-Host ("   STALKER GAMMA Save Backup  v{0}" -f $script:AppVersion) -ForegroundColor White
+    Write-Host ("   Anomaly Save Guardian  v{0}" -f $script:AppVersion) -ForegroundColor White
     Write-Host '=====================================================' -ForegroundColor DarkCyan
     Write-Host ("  Save folder      : {0}" -f $script:Config.saveFolderPath)
     Write-Host ("  Backup folder    : {0}" -f $script:Config.backupFolderPath)

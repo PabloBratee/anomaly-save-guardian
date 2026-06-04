@@ -15,7 +15,7 @@ save.*
 
 # Release packages (built by scripts/package-release.ps1)
 dist/
-STALKER-GAMMA-Save-Backup-v*.zip
+Anomaly-Save-Guardian-v*.zip
 
 # Generated preview/scratch
 ui-preview.png
