@@ -369,12 +369,19 @@ function Invoke-RestorePoint {
     Test-RestorePointReady -Config $Config -RestorePoint $RestorePoint
     $zipStage = $null
     $sourceFiles = @($RestorePoint.Files)
-    if (@($sourceFiles | Where-Object { $_.IsZip }).Count -gt 0) {
-        $zipStage = Expand-ZipRestoreSources -RestorePoint $RestorePoint
-        $sourceFiles = @($zipStage.Files)
+    $previousProtectedVar = Get-Variable -Name RetentionProtectedPaths -Scope Script -ErrorAction SilentlyContinue
+    $protected = @{}
+    foreach ($file in @($RestorePoint.Files)) {
+        $protected[(Get-FullRestorePath $file.SourcePath).ToLowerInvariant()] = $true
     }
+    $script:RetentionProtectedPaths = $protected
 
     try {
+        if (@($sourceFiles | Where-Object { $_.IsZip }).Count -gt 0) {
+            $zipStage = Expand-ZipRestoreSources -RestorePoint $RestorePoint
+            $sourceFiles = @($zipStage.Files)
+        }
+
         foreach ($file in $sourceFiles) {
             Get-RestoreDestinationPath -Config $Config -DestinationName $file.DestinationName | Out-Null
         }
@@ -411,6 +418,12 @@ function Invoke-RestorePoint {
     finally {
         if ($zipStage -and $zipStage.TempRoot -and (Test-Path -LiteralPath $zipStage.TempRoot)) {
             Remove-Item -LiteralPath $zipStage.TempRoot -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        if ($previousProtectedVar) {
+            $script:RetentionProtectedPaths = $previousProtectedVar.Value
+        }
+        else {
+            Remove-Variable -Name RetentionProtectedPaths -Scope Script -ErrorAction SilentlyContinue
         }
     }
 }

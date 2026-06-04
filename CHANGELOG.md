@@ -45,6 +45,10 @@ format — your existing `stalker-gamma-backup-config.json` keeps working.
   layout never breaks.
 - Settings now clears the in-memory backup cache after a save, so changed paths
   take effect immediately.
+- Rolling retention now keeps the latest grouped restore points total instead
+  of counting individual files. The default is 10 restore points, `.scop` /
+  `.scoc` / optional `.dds` stay together, and milestones plus pre-restore
+  safety backups are kept separately.
 - Rapid manual backups or milestones that land in the same second now get a
   `__002`-style suffix instead of overwriting an existing backup with the same
   timestamp.

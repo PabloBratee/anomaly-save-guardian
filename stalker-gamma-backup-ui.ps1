@@ -339,8 +339,8 @@ function Update-Info {
     Set-PathLabel $lblBakVal  $script:Config.backupFolderPath
     $exts = ($script:Config.includeExtensions -join '  ')
     $zip  = if ($script:Config.enableZipBackup) { '   (.zip)' } else { '' }
-    $lblRuleVal.Text = "$exts      -      keep newest $($script:Config.keepMaxBackupsPerSave) per save$zip"
-    $script:Tip.SetToolTip($lblRuleVal, "File types backed up: $($script:Config.includeExtensions -join ' ')`r`nKeep newest $($script:Config.keepMaxBackupsPerSave) backups per save (milestones are exempt).`r`nZip backups: $(if ($script:Config.enableZipBackup) { 'on' } else { 'off' }).")
+    $lblRuleVal.Text = "$exts      -      keep latest $($script:Config.keepMaxBackupsPerSave) restore points$zip"
+    $script:Tip.SetToolTip($lblRuleVal, "File types backed up: $($script:Config.includeExtensions -join ' ')`r`nRolling backups keep the latest $($script:Config.keepMaxBackupsPerSave) restore points. Milestones and pre-restore safety backups are kept separately.`r`nZip backups: $(if ($script:Config.enableZipBackup) { 'on' } else { 'off' }).")
     $lblFoot.Text = Get-FittedText -Text ("Config: $($script:ConfigPath)") -Font $lblFoot.Font -MaxWidth $lblFoot.Width
     $script:Tip.SetToolTip($lblFoot, $script:ConfigPath)
 }
@@ -480,7 +480,7 @@ function Show-SettingsDialog {
     Add-Section 'BACKUP BEHAVIOR' 206
     $tbExt = Add-Field 'File types' 236 ($script:Config.includeExtensions -join ' ') $null 'Save file types to copy. .scop + .scoc are a full save; .dds is the thumbnail.'
 
-    $dlg.Controls.Add((New-Label 'Keep backups' 18 292 96 20 $cMuted $fBody))
+    $dlg.Controls.Add((New-Label 'Keep points' 18 292 96 20 $cMuted $fBody))
     $numKeep = New-Object System.Windows.Forms.NumericUpDown
     $numKeep.SetBounds(118, 288, 84, 24); $numKeep.Minimum = 1; $numKeep.Maximum = 100000
     $numKeep.BackColor = $cCardHi; $numKeep.ForeColor = $cText; $numKeep.BorderStyle = 'FixedSingle'
@@ -491,7 +491,7 @@ function Show-SettingsDialog {
     $numDelay.SetBounds(346, 288, 70, 24); $numDelay.Minimum = 0; $numDelay.Maximum = 120
     $numDelay.BackColor = $cCardHi; $numDelay.ForeColor = $cText; $numDelay.BorderStyle = 'FixedSingle'
     $numDelay.Value = [Math]::Min(120, [Math]::Max(0, [int]$script:Config.backupDelaySeconds))
-    $dlg.Controls.Add((New-Label 'Copies kept per save. Milestones are permanent and never count toward this limit.' 118 316 452 16 $cFaint $fSmall))
+    $dlg.Controls.Add((New-Label 'Keeps latest restore points. Milestones and safety backups stay separate.' 118 316 452 16 $cFaint $fSmall))
 
     $chkZip = New-Object System.Windows.Forms.CheckBox
     $chkZip.Text = 'Store each backup as a .zip'

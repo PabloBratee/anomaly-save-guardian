@@ -4,7 +4,7 @@
   "milestoneFolderPath": "D:\\STALKER GAMMA Backups\\Milestones",
   "includeExtensions": [".sav", ".scop", ".scoc", ".dds"],
   "backupDelaySeconds": 3,
-  "keepMaxBackupsPerSave": 200,
+  "keepMaxBackupsPerSave": 10,
   "enableZipBackup": false,
   "logFilePath": "D:\\STALKER GAMMA Backups\\backup-log.txt"
 }

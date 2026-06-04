@@ -96,6 +96,28 @@ function New-FakeSave {
     return $path
 }
 
+function New-RollingRestorePoint {
+    param(
+        [Parameter(Mandatory)] [string] $Folder,
+        [Parameter(Mandatory)] [string] $SaveName,
+        [Parameter(Mandatory)] [string] $Timestamp,
+        [string] $CollisionSuffix = '',
+        [switch] $Zip,
+        [switch] $Thumbnail
+    )
+    $suffix = if ($CollisionSuffix) { "__$CollisionSuffix" } else { '' }
+    foreach ($ext in @('.scop', '.scoc')) {
+        $name = "{0}__{1}{2}{3}" -f $SaveName, $Timestamp, $suffix, $ext
+        if ($Zip) { $name = "$name.zip" }
+        Set-Content -LiteralPath (Join-Path $Folder $name) -Value "$SaveName-$Timestamp-$ext" -Encoding ASCII
+    }
+    if ($Thumbnail) {
+        $name = "{0}__{1}{2}.dds" -f $SaveName, $Timestamp, $suffix
+        if ($Zip) { $name = "$name.zip" }
+        Set-Content -LiteralPath (Join-Path $Folder $name) -Value "$SaveName-$Timestamp-dds" -Encoding ASCII
+    }
+}
+
 function Get-BytesHash {
     param([Parameter(Mandatory)] [string] $Path)
     return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash
@@ -163,6 +185,89 @@ try {
         Assert-Equal 2 $rolling.Count 'Expected retention to keep two rolling backups.'
         Assert-True (Test-Path -LiteralPath $milestone) 'Milestone snapshot was deleted.'
         Assert-Equal $sourceHash (Get-BytesHash $save) 'Original fake save changed during retention.'
+    }
+
+    Invoke-Test 'retention keeps newest ten grouped rolling restore points total with thumbnails' {
+        $root = New-TestRoot
+        $cfg = Initialize-TestConfig -Root $root -Keep 10
+        $liveScope = New-FakeSave -Folder $cfg.saveFolderPath -Name 'quicksave.scop' -Content 'live-scope'
+        $liveScoc = New-FakeSave -Folder $cfg.saveFolderPath -Name 'quicksave.scoc' -Content 'live-scoc'
+        $liveScopeHash = Get-BytesHash $liveScope
+        $liveScocHash = Get-BytesHash $liveScoc
+        New-Item -ItemType Directory -Path $cfg.milestoneFolderPath -Force | Out-Null
+        New-RollingRestorePoint -Folder $cfg.milestoneFolderPath -SaveName 'quicksave' -Timestamp '2026-06-04_00-00-00' -Thumbnail
+        $safetyRoot = Join-Path $cfg.backupFolderPath 'PreRestoreSafetyBackups'
+        New-Item -ItemType Directory -Path $safetyRoot -Force | Out-Null
+        New-RollingRestorePoint -Folder $safetyRoot -SaveName 'quicksave' -Timestamp '2026-06-04_00-00-00'
+        $outside = Join-Path $root 'outside-backups'
+        New-Item -ItemType Directory -Path $outside -Force | Out-Null
+        New-RollingRestorePoint -Folder $outside -SaveName 'quicksave' -Timestamp '2026-06-04_00-00-00'
+
+        for ($i = 1; $i -le 12; $i++) {
+            New-RollingRestorePoint -Folder $cfg.backupFolderPath -SaveName 'quicksave' -Timestamp ("2026-06-04_00-00-{0:D2}" -f $i) -Thumbnail
+        }
+        New-RollingRestorePoint -Folder $cfg.backupFolderPath -SaveName 'autosave' -Timestamp '2026-06-04_00-01-00'
+
+        Invoke-Retention -Base 'quicksave' -Ext '.scop'
+
+        $quicksaveRolling = @(Get-ChildItem -LiteralPath $cfg.backupFolderPath -File | Where-Object { $_.Name -like 'quicksave__*' })
+        $oldest = @(Get-ChildItem -LiteralPath $cfg.backupFolderPath -File | Where-Object { $_.Name -like 'quicksave__2026-06-04_00-00-01*' -or $_.Name -like 'quicksave__2026-06-04_00-00-02*' -or $_.Name -like 'quicksave__2026-06-04_00-00-03*' })
+        $newest = @(Get-ChildItem -LiteralPath $cfg.backupFolderPath -File | Where-Object { $_.Name -like 'quicksave__2026-06-04_00-00-12*' })
+        Assert-Equal 27 $quicksaveRolling.Count 'Expected nine quicksave restore points with .scop, .scoc and .dds files kept.'
+        Assert-Equal 0 $oldest.Count 'Expected the three oldest rolling restore points to be deleted as complete groups.'
+        Assert-Equal 3 $newest.Count 'Expected newest restore point to keep .scop, .scoc and .dds together.'
+        Assert-Equal 2 @(Get-ChildItem -LiteralPath $cfg.backupFolderPath -File | Where-Object { $_.Name -like 'autosave__*' }).Count 'Retention for quicksave deleted an unrelated rolling restore point.'
+        Assert-Equal 3 @(Get-ChildItem -LiteralPath $cfg.milestoneFolderPath -File).Count 'Milestone restore point was counted or deleted by rolling retention.'
+        Assert-Equal 2 @(Get-ChildItem -LiteralPath $safetyRoot -File).Count 'Pre-restore safety backup was counted or deleted by rolling retention.'
+        Assert-Equal 2 @(Get-ChildItem -LiteralPath $outside -File).Count 'Retention deleted files outside the configured rolling backup folder.'
+        Assert-Equal $liveScopeHash (Get-BytesHash $liveScope) 'Live .scop changed during retention.'
+        Assert-Equal $liveScocHash (Get-BytesHash $liveScoc) 'Live .scoc changed during retention.'
+    }
+
+    Invoke-Test 'retention groups timestamp collision suffixes with their restore point' {
+        $root = New-TestRoot
+        $cfg = Initialize-TestConfig -Root $root -Keep 1
+        New-RollingRestorePoint -Folder $cfg.backupFolderPath -SaveName 'quicksave' -Timestamp '2026-06-04_00-00-01'
+        New-RollingRestorePoint -Folder $cfg.backupFolderPath -SaveName 'quicksave' -Timestamp '2026-06-04_00-00-02' -CollisionSuffix '002' -Thumbnail
+
+        Invoke-Retention -Base 'quicksave' -Ext '.scop'
+
+        Assert-Equal 0 @(Get-ChildItem -LiteralPath $cfg.backupFolderPath -File | Where-Object { $_.Name -like 'quicksave__2026-06-04_00-00-01*' }).Count 'Older restore point was not deleted.'
+        Assert-Equal 3 @(Get-ChildItem -LiteralPath $cfg.backupFolderPath -File | Where-Object { $_.Name -like 'quicksave__2026-06-04_00-00-02__002*' }).Count 'Collision-suffixed restore point was not kept as a complete group.'
+    }
+
+    Invoke-Test 'zip retention keeps newest grouped rolling restore points' {
+        $root = New-TestRoot
+        $cfg = Initialize-TestConfig -Root $root -Zip $true -Keep 2
+        foreach ($stamp in @('2026-06-04_00-00-01', '2026-06-04_00-00-02', '2026-06-04_00-00-03')) {
+            New-RollingRestorePoint -Folder $cfg.backupFolderPath -SaveName 'quicksave' -Timestamp $stamp -Zip -Thumbnail
+        }
+
+        Invoke-Retention -Base 'quicksave' -Ext '.scop'
+
+        $zips = @(Get-ChildItem -LiteralPath $cfg.backupFolderPath -File | Where-Object { $_.Name -like 'quicksave__*.zip' })
+        Assert-Equal 6 $zips.Count 'Expected two zip restore points with .scop, .scoc and .dds files kept.'
+        Assert-Equal 0 @(Get-ChildItem -LiteralPath $cfg.backupFolderPath -File | Where-Object { $_.Name -like 'quicksave__2026-06-04_00-00-01*' }).Count 'Oldest zip restore point was not deleted as a complete group.'
+    }
+
+    Invoke-Test 'retention skips files protected by an active restore operation' {
+        $root = New-TestRoot
+        $cfg = Initialize-TestConfig -Root $root -Keep 1
+        New-RollingRestorePoint -Folder $cfg.backupFolderPath -SaveName 'quicksave' -Timestamp '2026-06-04_00-00-01'
+        New-RollingRestorePoint -Folder $cfg.backupFolderPath -SaveName 'quicksave' -Timestamp '2026-06-04_00-00-02'
+        $protected = @{}
+        foreach ($file in @(Get-ChildItem -LiteralPath $cfg.backupFolderPath -File | Where-Object { $_.Name -like 'quicksave__2026-06-04_00-00-01*' })) {
+            $protected[[System.IO.Path]::GetFullPath($file.FullName).ToLowerInvariant()] = $true
+        }
+        $script:RetentionProtectedPaths = $protected
+        try {
+            Invoke-Retention -Base 'quicksave' -Ext '.scop'
+        }
+        finally {
+            Remove-Variable -Name RetentionProtectedPaths -Scope Script -ErrorAction SilentlyContinue
+        }
+
+        Assert-Equal 2 @(Get-ChildItem -LiteralPath $cfg.backupFolderPath -File | Where-Object { $_.Name -like 'quicksave__2026-06-04_00-00-01*' }).Count 'Active restore point files were deleted by retention.'
     }
 
     Invoke-Test 'missing backup target is handled without changing originals' {

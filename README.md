@@ -12,8 +12,8 @@ Built entirely on **built-in PowerShell / .NET** — nothing to install.
 > **🛡️ Safe by design:** automatic backups only read and copy your original
 > saves. Restores are guided, ask for confirmation, and create a pre-restore
 > safety backup before overwriting matching live save files. The only files the
-> tool ever deletes are *old backup copies* in the backup folder (retention), and
-> milestone snapshots are never deleted at all.
+> tool ever deletes are old rolling restore points in the backup folder
+> (retention); milestones and pre-restore safety backups are kept separately.
 
 ---
 
@@ -32,8 +32,8 @@ Built entirely on **built-in PowerShell / .NET** — nothing to install.
   safety backup, then restore with confirmation.
 - 🗂️ **Timestamped, append-only** backups — a death can never overwrite an
   older backup.
-- ♻️ **Retention** — keep the newest *N* backups per save; old ones pruned
-  safely (milestones exempt).
+- ♻️ **Retention** — rolling backups keep the latest 10 restore points by
+  default; milestones and pre-restore safety backups are kept separately.
 - 🗜️ **Optional `.zip`** backups.
 - 📌 **System tray** — minimise/close to tray, keeps running in the background.
 - 💪 **Robust** — handles locked/partly-written saves and an unplugged backup
@@ -122,8 +122,9 @@ via the shortcut's **Properties → Change Icon**.
     `*.scop` file — that folder is your save folder.
 - **Backup folder** — put it on a **different physical drive** from the game.
   A backup on the same disk won't help if that disk dies.
-- **Keep the defaults** (`.sav .scop .scoc .dds`, keep 200) unless you have a
-  reason to change them. `.scop` + `.scoc` together are a full save.
+- **Keep the defaults** (`.sav .scop .scoc .dds`, keep 10 restore points)
+  unless you have a reason to change them. `.scop` + `.scoc` together are a full
+  save.
 - Before anything risky (a tough fight, the Brain Scorcher, a long-run hardcore
   character), hit **Take Milestone** — it's a permanent snapshot that retention
   never deletes.
@@ -171,7 +172,7 @@ Use **Settings** in the app (recommended), or edit
   "milestoneFolderPath": "D:\\STALKER GAMMA Backups\\Milestones",
   "includeExtensions": [".sav", ".scop", ".scoc", ".dds"],
   "backupDelaySeconds": 3,
-  "keepMaxBackupsPerSave": 200,
+  "keepMaxBackupsPerSave": 10,
   "enableZipBackup": false,
   "logFilePath": "D:\\STALKER GAMMA Backups\\backup-log.txt"
 }
@@ -184,7 +185,7 @@ Use **Settings** in the app (recommended), or edit
 | `milestoneFolderPath` | Permanent snapshots — retention **never** deletes these. Optional; defaults to a `Milestones` subfolder of the backup folder. |
 | `includeExtensions` | File types to back up. `.scop` + `.scoc` are a full save; `.dds` is the thumbnail. |
 | `backupDelaySeconds` | Settle time after a change before copying. |
-| `keepMaxBackupsPerSave` | How many rolling backups to keep per save name. Milestones are exempt. |
+| `keepMaxBackupsPerSave` | How many grouped rolling restore points to keep total. The name is kept for backward compatibility. Milestones and pre-restore safety backups are kept separately. |
 | `enableZipBackup` | `true` = store each backup as a `.zip`; `false` = plain copy (easiest to restore). |
 | `logFilePath` | Where the log is written. |
 
@@ -201,8 +202,7 @@ backup and leaves every earlier "alive" backup untouched.
 
 To protect a specific point against retention pruning, **Take Milestone** — those
 snapshots live in the milestone folder and are never auto-deleted, surviving any
-number of deaths and saves. Naming a distinct in-game hard-save also gives it its
-own retention bucket.
+number of deaths and saves.
 
 ---
 
@@ -278,9 +278,11 @@ the same timestamp, the later one gets a suffix such as
 - Before copying, a file must be size-stable and not locked; locked files are
   retried and otherwise skipped (and retried later) — nothing ever crashes the
   run.
-- Retention keeps the newest *N* backups per save name (sorted by the timestamp
-  in the filename, which is reliable even though copies share the source's
-  modified time). The milestone folder is never scanned by retention.
+- Retention keeps the newest *N* grouped rolling restore points total, sorted by
+  the timestamp in the filename. A `.scop` + `.scoc` pair, plus optional `.dds`
+  thumbnail, counts as one restore point; zip backups are grouped the same way.
+  Milestone and pre-restore safety backup folders are never scanned by rolling
+  retention.
 
 ---
 
@@ -347,9 +349,10 @@ This tool is built to be trustworthy with your saves:
   them into the live save folder. Backup files are never modified or deleted.
 - **Live files are protected before overwrite.** Restore first creates a
   pre-restore safety backup of matching live files. If that fails, restore stops.
-- **Deletions are scoped and conservative.** Retention only deletes *backup
-  copies* it created, and only those physically inside the backup folder.
-  Milestone snapshots are never deleted.
+- **Deletions are scoped and conservative.** Retention only deletes old rolling
+  restore points it created, and only those physically inside the backup folder.
+  Milestone snapshots and pre-restore safety backups are never deleted by
+  rolling retention.
 - **No network, no telemetry, no dependencies.** Everything runs locally with
   built-in Windows components.
 - **Your personal config and logs stay local** and are git-ignored.

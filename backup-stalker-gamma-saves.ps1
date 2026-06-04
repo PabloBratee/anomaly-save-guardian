@@ -380,9 +380,107 @@ function Get-UniqueBackupPath {
     throw "Could not create a unique backup name for '$DestinationPath'."
 }
 
-# Retention: for one original save (base name + extension), keep only the newest
-# N backups in the backup folder and delete the rest. Conservative + scoped to
-# the backup folder only. NEVER touches the save folder.
+function Get-FullBackupPath {
+    param([Parameter(Mandatory)] [string] $Path)
+    return [System.IO.Path]::GetFullPath($Path)
+}
+
+function Test-PathInsideBackupFolder {
+    param(
+        [Parameter(Mandatory)] [string] $Path,
+        [Parameter(Mandatory)] [string] $Folder
+    )
+    $fullPath = Get-FullBackupPath $Path
+    $fullFolder = (Get-FullBackupPath $Folder).TrimEnd('\', '/')
+    return ($fullPath -ieq $fullFolder -or $fullPath.StartsWith($fullFolder + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase))
+}
+
+function Get-RollingBackupFileInfoFromName {
+    param([Parameter(Mandatory)] [System.IO.FileInfo] $File)
+
+    $name = $File.Name
+    $isZip = $false
+    if ($name.ToLowerInvariant().EndsWith('.zip')) {
+        $isZip = $true
+        $name = [System.IO.Path]::GetFileNameWithoutExtension($name)
+    }
+
+    $match = [regex]::Match($name, '^(?<save>.+)__(?<timestamp>\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})(?:__(?<collision>\d{3,4}))?(?<ext>\.[^.\\/:]+)$')
+    if (-not $match.Success) { return $null }
+
+    $ext = $match.Groups['ext'].Value.ToLowerInvariant()
+    if ($script:Config.includeExtensions -notcontains $ext) { return $null }
+
+    $saveName = $match.Groups['save'].Value
+    if ([string]::IsNullOrWhiteSpace($saveName)) { return $null }
+    if ($saveName.IndexOfAny([System.IO.Path]::GetInvalidFileNameChars()) -ge 0) { return $null }
+
+    return [PSCustomObject]@{
+        SaveName        = $saveName
+        Timestamp       = $match.Groups['timestamp'].Value
+        CollisionSuffix = $match.Groups['collision'].Value
+        Extension       = $ext
+        SourcePath      = $File.FullName
+        SourceName      = $File.Name
+        IsZip           = $isZip
+    }
+}
+
+function Get-RollingBackupRestorePoints {
+    param([Parameter(Mandatory)] [string] $Folder)
+
+    $groups = @{}
+    $files = @(Get-ChildItem -LiteralPath $Folder -File -ErrorAction Stop)
+    foreach ($file in $files) {
+        if (-not (Test-PathInsideBackupFolder -Path $file.FullName -Folder $Folder)) { continue }
+        $info = Get-RollingBackupFileInfoFromName -File $file
+        if ($null -eq $info) { continue }
+
+        $type = if ($info.IsZip) { 'Zip' } else { 'Rolling' }
+        $key = "{0}|{1}|{2}" -f $type, $info.SaveName, $info.Timestamp
+        if (-not $groups.ContainsKey($key)) {
+            $groups[$key] = [PSCustomObject]@{
+                Type      = $type
+                SaveName  = $info.SaveName
+                Timestamp = $info.Timestamp
+                Files     = @()
+            }
+        }
+        $groups[$key].Files = @($groups[$key].Files + $info)
+    }
+
+    $points = foreach ($key in $groups.Keys) {
+        $group = $groups[$key]
+        [PSCustomObject]@{
+            Type      = $group.Type
+            SaveName  = $group.SaveName
+            Timestamp = $group.Timestamp
+            Files     = @($group.Files | Sort-Object SourceName)
+        }
+    }
+
+    return @($points | Sort-Object @{ Expression = 'Timestamp'; Descending = $true }, @{ Expression = 'SaveName'; Descending = $true }, @{ Expression = 'Type'; Descending = $true })
+}
+
+function Test-RetentionFileProtected {
+    param([Parameter(Mandatory)] [string] $Path)
+
+    if (-not (Get-Variable -Name RetentionProtectedPaths -Scope Script -ErrorAction SilentlyContinue)) {
+        return $false
+    }
+    if ($null -eq $script:RetentionProtectedPaths) { return $false }
+
+    $fullPath = Get-FullBackupPath $Path
+    if ($script:RetentionProtectedPaths -is [hashtable]) {
+        return $script:RetentionProtectedPaths.ContainsKey($fullPath.ToLowerInvariant())
+    }
+    return @($script:RetentionProtectedPaths) -contains $fullPath
+}
+
+# Retention: keep only the newest N grouped rolling restore points in the top
+# level of the backup folder and delete older groups as a unit. Conservative +
+# scoped to the configured rolling backup folder only. NEVER touches the save
+# folder, milestone folder, pre-restore safety folders, logs or config.
 function Invoke-Retention {
     param(
         [Parameter(Mandatory)] [string] $Base,
@@ -394,48 +492,37 @@ function Invoke-Retention {
         if ($keep -lt 1) { return }
         if (-not (Test-Path -LiteralPath $folder)) { return }
 
-        # Match exactly the naming scheme this script produces for this save.
-        if ($script:Config.enableZipBackup) {
-            $pattern = "${Base}__*${Ext}.zip"
-        }
-        else {
-            $pattern = "${Base}__*${Ext}"
-        }
+        # Sort by the embedded filename timestamp, not LastWriteTime: Copy-Item
+        # preserves the source file timestamp, so filesystem times are not a
+        # reliable backup age signal.
+        $restorePoints = @(Get-RollingBackupRestorePoints -Folder $folder)
+        if ($restorePoints.Count -le $keep) { return }
 
-        # -like (not -Filter) avoids the legacy 8.3 wildcard quirk where "*.sav"
-        # can also match longer extensions.
-        #
-        # Sort by NAME, not LastWriteTime: Copy-Item preserves the source file's
-        # timestamp, so every backup of an unchanged save would share the same
-        # LastWriteTime and the sort could delete the newest copy. The embedded
-        # "__YYYY-MM-DD_HH-mm-ss" timestamp sorts chronologically as text, so a
-        # descending name sort reliably puts the newest backups first.
-        $backups = @(Get-ChildItem -LiteralPath $folder -File |
-                     Where-Object { $_.Name -like $pattern } |
-                     Sort-Object Name -Descending)
+        $toDelete = @($restorePoints | Select-Object -Skip $keep)
+        foreach ($point in $toDelete) {
+            foreach ($file in @($point.Files)) {
+                if (-not (Test-PathInsideBackupFolder -Path $file.SourcePath -Folder $folder)) { continue }
+                if (Test-RetentionFileProtected -Path $file.SourcePath) {
+                    Write-Log "Skipped retention delete for active restore source '$($file.SourcePath)'" 'WARN'
+                    continue
+                }
 
-        if ($backups.Count -le $keep) { return }
-
-        $toDelete = $backups | Select-Object -Skip $keep
-        foreach ($file in $toDelete) {
-            # SAFETY: only ever delete files physically inside the backup folder.
-            if ($file.FullName -notlike (Join-Path $folder '*')) { continue }
-
-            if ($DryRun) {
-                Write-Log "[DRY-RUN] Would delete old backup '$($file.FullName)'" 'DRYRUN'
-                continue
-            }
-            try {
-                Remove-Item -LiteralPath $file.FullName -Force
-                Write-Log "Deleted old backup '$($file.FullName)'"
-            }
-            catch {
-                Write-Log "Failed to delete old backup '$($file.FullName)': $($_.Exception.Message)" 'WARN'
+                if ($DryRun) {
+                    Write-Log "[DRY-RUN] Would delete old backup '$($file.SourcePath)'" 'DRYRUN'
+                    continue
+                }
+                try {
+                    Remove-Item -LiteralPath $file.SourcePath -Force
+                    Write-Log "Deleted old backup '$($file.SourcePath)'"
+                }
+                catch {
+                    Write-Log "Failed to delete old backup '$($file.SourcePath)': $($_.Exception.Message)" 'WARN'
+                }
             }
         }
     }
     catch {
-        Write-Log "Retention error for '${Base}${Ext}': $($_.Exception.Message)" 'WARN'
+        Write-Log "Retention error: $($_.Exception.Message)" 'WARN'
     }
 }
 
@@ -750,7 +837,7 @@ function Show-StartupSummary {
     Write-Host ("  Watched ext.     : {0}" -f $exts)
     Write-Host ("  Mode             : {0}" -f $Mode)
     Write-Host ("  Dry-run          : {0}" -f $dryState)
-    Write-Host ("  Retention        : keep newest {0} per save" -f $script:Config.keepMaxBackupsPerSave)
+    Write-Host ("  Retention        : keep latest {0} rolling restore points" -f $script:Config.keepMaxBackupsPerSave)
     Write-Host ("  Zip backups      : {0}" -f $zipState)
     Write-Host ("  Backup delay     : {0} second(s)" -f $script:Config.backupDelaySeconds)
     Write-Host ("  Log file         : {0}" -f $script:Config.logFilePath)

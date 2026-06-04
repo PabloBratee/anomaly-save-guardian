@@ -16,9 +16,10 @@ By design:
 - Backup files are never modified or deleted during restore. Zip restore points
   are validated and extracted to a temporary folder first so unsafe paths are
   blocked before anything is copied into the live save folder.
-- The only files the tool ever **deletes** are *old backup copies* inside the
-  backup folder (retention), and only those matching the names it created.
-  Milestone snapshots are never deleted.
+- The only files the tool ever **deletes** are old rolling backup restore
+  points inside the backup folder (retention), and only those matching the names
+  it created. Milestone snapshots and pre-restore safety backups are never
+  deleted by rolling retention.
 - Your personal config (`stalker-gamma-backup-config.json`) stays on your
   machine and is git-ignored.
 
