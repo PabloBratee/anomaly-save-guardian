@@ -195,6 +195,19 @@ function Import-BackupConfig {
         $milestone = Join-Path ([string]$cfg.backupFolderPath) 'Milestones'
     }
 
+    $looksLikeOldUntouchedDefault =
+        $keep -eq 200 -and
+        ([string]$cfg.saveFolderPath -ieq 'C:\Anomaly\appdata\savedgames') -and
+        ([string]$cfg.backupFolderPath -ieq 'D:\STALKER GAMMA Backups') -and
+        ([string]$milestone -ieq 'D:\STALKER GAMMA Backups\Milestones') -and
+        ((@($normExt) -join '|') -eq '.sav|.scop|.scoc|.dds') -and
+        $delay -eq 3 -and
+        ([bool]$cfg.enableZipBackup) -eq $false -and
+        ([string]$cfg.logFilePath -ieq 'D:\STALKER GAMMA Backups\backup-log.txt')
+    if ($looksLikeOldUntouchedDefault) {
+        $keep = 10
+    }
+
     # Return a clean, typed object.
     return [PSCustomObject]@{
         saveFolderPath        = [string]$cfg.saveFolderPath

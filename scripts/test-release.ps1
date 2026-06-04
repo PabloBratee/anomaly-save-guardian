@@ -13,6 +13,8 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $enginePath = Join-Path $repoRoot 'backup-stalker-gamma-saves.ps1'
+$uiPath = Join-Path $repoRoot 'stalker-gamma-backup-ui.ps1'
+$exampleConfigPath = Join-Path $repoRoot 'stalker-gamma-backup-config.example.json'
 
 . $enginePath -AsLibrary
 
@@ -303,11 +305,86 @@ try {
         $root = New-TestRoot
         $config = Join-Path $root 'stalker-gamma-backup-config.json'
         $example = Join-Path $root 'stalker-gamma-backup-config.example.json'
-        Copy-Item -LiteralPath (Join-Path $repoRoot 'stalker-gamma-backup-config.example.json') -Destination $example
+        Copy-Item -LiteralPath $exampleConfigPath -Destination $example
 
         Initialize-ConfigIfMissing -ConfigPath $config -ExamplePath $example
 
         Assert-True (Test-Path -LiteralPath $config) 'Expected missing personal config to be copied from example.'
+        $cfg = Import-BackupConfig -ConfigPath $config
+        Assert-Equal 10 $cfg.keepMaxBackupsPerSave 'Fresh config should default to 10 grouped restore points.'
+    }
+
+    Invoke-Test 'example config default keeps ten grouped restore points' {
+        $cfg = Import-BackupConfig -ConfigPath $exampleConfigPath
+
+        Assert-Equal 10 $cfg.keepMaxBackupsPerSave 'Example config should default to 10 grouped restore points.'
+    }
+
+    Invoke-Test 'untouched old default config is treated as ten restore points' {
+        $root = New-TestRoot
+        $config = Join-Path $root 'stalker-gamma-backup-config.json'
+        Set-Content -LiteralPath $config -Encoding ASCII -Value @'
+{
+  "saveFolderPath": "C:\\Anomaly\\appdata\\savedgames",
+  "backupFolderPath": "D:\\STALKER GAMMA Backups",
+  "milestoneFolderPath": "D:\\STALKER GAMMA Backups\\Milestones",
+  "includeExtensions": [".sav", ".scop", ".scoc", ".dds"],
+  "backupDelaySeconds": 3,
+  "keepMaxBackupsPerSave": 200,
+  "enableZipBackup": false,
+  "logFilePath": "D:\\STALKER GAMMA Backups\\backup-log.txt"
+}
+'@
+
+        $cfg = Import-BackupConfig -ConfigPath $config
+
+        Assert-Equal 10 $cfg.keepMaxBackupsPerSave 'Untouched old default config should be treated as 10 grouped restore points.'
+    }
+
+    Invoke-Test 'customized existing config keeps explicit retention value' {
+        $root = New-TestRoot
+        $config = Join-Path $root 'stalker-gamma-backup-config.json'
+        Set-Content -LiteralPath $config -Encoding ASCII -Value @'
+{
+  "saveFolderPath": "C:\\Anomaly\\appdata\\savedgames",
+  "backupFolderPath": "E:\\My Custom Backups",
+  "milestoneFolderPath": "E:\\My Custom Backups\\Milestones",
+  "includeExtensions": [".sav", ".scop", ".scoc", ".dds"],
+  "backupDelaySeconds": 3,
+  "keepMaxBackupsPerSave": 200,
+  "enableZipBackup": false,
+  "logFilePath": "E:\\My Custom Backups\\backup-log.txt"
+}
+'@
+
+        $cfg = Import-BackupConfig -ConfigPath $config
+
+        Assert-Equal 200 $cfg.keepMaxBackupsPerSave 'Customized existing config should keep an explicit retention value.'
+    }
+
+    Invoke-Test 'main UI footer shows creator credit without visible config path' {
+        $uiSource = Get-Content -LiteralPath $uiPath -Raw
+
+        Assert-True ($uiSource -like '*Created by GAM33RSFR33AK*') 'Expected main UI source to include the creator credit.'
+        Assert-True ($uiSource -notmatch '\$lblFoot\.Text\s*=.*Config:') 'Main footer should not replace the creator credit with the config path.'
+        Assert-True ($uiSource -notmatch 'SetToolTip\(\$lblFoot,\s*\$script:ConfigPath\)') 'Main footer should not expose the config path tooltip.'
+    }
+
+    Invoke-Test 'UI and public docs do not describe stale 200 save-file defaults' {
+        $paths = @(
+            $uiPath,
+            $exampleConfigPath,
+            (Join-Path $repoRoot 'README.md'),
+            (Join-Path $repoRoot 'CHANGELOG.md'),
+            (Join-Path $repoRoot 'SECURITY.md'),
+            (Join-Path $repoRoot 'docs\release-checklist.md')
+        )
+        $combined = ($paths | ForEach-Object { Get-Content -LiteralPath $_ -Raw }) -join "`n"
+
+        $staleKeepPattern = 'keep latest\s+' + '200'
+        $staleSaveFilesPattern = '200\s+' + 'save files'
+        Assert-True ($combined -notmatch $staleKeepPattern) 'Stale high-retention default text remains.'
+        Assert-True ($combined -notmatch $staleSaveFilesPattern) 'Stale save-file default wording remains.'
     }
 
     Invoke-Test 'include extensions are respected' {

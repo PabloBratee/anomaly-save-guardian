@@ -413,8 +413,8 @@ function Update-Info {
     $zip  = if ($script:Config.enableZipBackup) { '   (.zip)' } else { '' }
     $lblRuleVal.Text = "$exts      -      keep latest $($script:Config.keepMaxBackupsPerSave) restore points$zip"
     $script:Tip.SetToolTip($lblRuleVal, "File types backed up: $($script:Config.includeExtensions -join ' ')`r`nRolling backups keep the latest $($script:Config.keepMaxBackupsPerSave) restore points. Milestones and pre-restore safety backups are kept separately.`r`nZip backups: $(if ($script:Config.enableZipBackup) { 'on' } else { 'off' }).")
-    $lblFoot.Text = Get-FittedText -Text ("Config: $($script:ConfigPath)") -Font $lblFoot.Font -MaxWidth $lblFoot.Width
-    $script:Tip.SetToolTip($lblFoot, $script:ConfigPath)
+    $lblFoot.Text = 'Created by GAM33RSFR33AK'
+    $script:Tip.SetToolTip($lblFoot, 'Created by GAM33RSFR33AK')
 }
 
 function Show-EmptyLogHint {
