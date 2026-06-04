@@ -3,13 +3,16 @@
     Desktop app (GUI) for STALKER GAMMA Save Backup.
 
 .DESCRIPTION
-    A small, dark-themed window that automatically backs up your STALKER GAMMA
-    saves while you play. Start/stop watching, run a one-time backup, take a
-    permanent milestone snapshot, change folders in Settings, and minimise to the
-    system tray - all without a terminal.
+    A small, dark-themed window that automatically backs up your STALKER GAMMA /
+    Anomaly saves while you play. Start/stop watching, run a one-time backup, take
+    a permanent milestone snapshot, change folders in Settings, see how to restore,
+    and minimise to the system tray - all without a terminal.
 
     All real backup logic lives in 'backup-stalker-gamma-saves.ps1' (loaded here
     as a library). Settings are stored in 'stalker-gamma-backup-config.json'.
+
+    Safe by design: your original saves are only ever read and copied - never
+    modified, renamed, moved, or deleted.
 
 .PARAMETER NoShow
     Build the window but do not display it (used for automated testing only).
@@ -22,11 +25,12 @@ Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
 
-# Encoding-safe glyphs.
-$symPlay = [string][char]0x25B6   # play
+# Encoding-safe glyphs (built by char code so the file stays ASCII-clean).
+$symPlay = [string][char]0x25B6   # play  (start)
 $symStop = [string][char]0x25A0   # stop
 $symDot  = [string][char]0x25CF   # status dot
-$symGear = [string][char]0x2699   # gear
+$symGear = [string][char]0x2699   # gear  (settings)
+$symFlag = [string][char]0x2691   # flag  (milestone)
 
 # ---------------------------------------------------------------------------
 # Load the core backup engine as a library
@@ -45,8 +49,13 @@ if (-not (Test-Path -LiteralPath $corePath)) {
 # Config (seed from example on first run, then load)
 # ---------------------------------------------------------------------------
 $script:ConfigPath = Join-Path $scriptDir 'stalker-gamma-backup-config.json'
-$examplePath       = Join-Path $scriptDir 'stalker-gamma-backup-config.example.json'
-Initialize-ConfigIfMissing -ConfigPath $script:ConfigPath -ExamplePath $examplePath
+$script:ExamplePath = Join-Path $scriptDir 'stalker-gamma-backup-config.example.json'
+
+# Remember whether this is genuinely the first run (no personal config yet) so we
+# can show friendly onboarding instead of dropping the user into a blank window.
+$script:FirstRun = -not (Test-Path -LiteralPath $script:ConfigPath)
+
+Initialize-ConfigIfMissing -ConfigPath $script:ConfigPath -ExamplePath $script:ExamplePath
 try {
     $script:Config = Import-BackupConfig -ConfigPath $script:ConfigPath
 }
@@ -58,9 +67,11 @@ catch {
 }
 
 # Shared state the core functions expect.
-$DryRun             = $false
-$script:BackupCache = @{}
-$script:Watching    = $false
+$DryRun              = $false
+$script:BackupCache  = @{}
+$script:Watching     = $false
+$script:AppState     = 'Idle'
+$script:LastBackupTime = $null
 
 # ---------------------------------------------------------------------------
 # Theme
@@ -77,17 +88,24 @@ function Shade {
 $cBg      = C 22 24 26
 $cHeader  = C 16 18 19
 $cCard    = C 32 35 37
+$cCardHi  = C 40 44 46
+$cLine    = C 52 56 58
 $cText    = C 232 235 234
-$cMuted   = C 148 154 152
+$cMuted   = C 150 156 154
+$cFaint   = C 110 116 114
 $cAccent  = C 132 204 72     # radioactive green
-$cRed     = C 208 84 84
+$cRed     = C 214 96 96
 $cBlue    = C 86 146 206
-$cAmber   = C 222 178 74
+$cAmber   = C 226 182 78
 $cBlack   = [System.Drawing.Color]::Black
 $cWhite   = [System.Drawing.Color]::White
+$cLogBg   = C 15 16 17
 
 $fTitle   = New-Object System.Drawing.Font('Segoe UI', 16, [System.Drawing.FontStyle]::Bold)
+$fTitle2  = New-Object System.Drawing.Font('Segoe UI', 13)
+$fState   = New-Object System.Drawing.Font('Segoe UI', 13.5, [System.Drawing.FontStyle]::Bold)
 $fSub     = New-Object System.Drawing.Font('Segoe UI', 8.5)
+$fBtnBig  = New-Object System.Drawing.Font('Segoe UI', 12, [System.Drawing.FontStyle]::Bold)
 $fBtn     = New-Object System.Drawing.Font('Segoe UI', 10, [System.Drawing.FontStyle]::Bold)
 $fBody    = New-Object System.Drawing.Font('Segoe UI', 9)
 $fBodyB   = New-Object System.Drawing.Font('Segoe UI', 9, [System.Drawing.FontStyle]::Bold)
@@ -101,6 +119,7 @@ function New-Label {
     $l.ForeColor = $Fore; $l.Font = $Font
     $l.TextAlign = $Align
     $l.BackColor = [System.Drawing.Color]::Transparent
+    $l.UseMnemonic = $false   # so '&' in paths/headers renders literally
     return $l
 }
 function New-Panel {
@@ -118,7 +137,35 @@ function New-Button {
     $b.Cursor = [System.Windows.Forms.Cursors]::Hand
     $b.FlatAppearance.MouseOverBackColor = (Shade $Back 18)
     $b.FlatAppearance.MouseDownBackColor = (Shade $Back -12)
+    $b.UseVisualStyleBackColor = $false
     return $b
+}
+
+# Shared tooltip provider (created early so Update-Info can attach path tooltips).
+$script:Tip = New-Object System.Windows.Forms.ToolTip
+$script:Tip.AutoPopDelay = 20000
+$script:Tip.InitialDelay = 350
+$script:Tip.ReshowDelay  = 120
+
+# Middle-truncate text so long paths fit a fixed-width label (full value in tooltip).
+function Get-FittedText {
+    param([string]$Text, $Font, [int]$MaxWidth)
+    if ([string]::IsNullOrEmpty($Text)) { return $Text }
+    if ([System.Windows.Forms.TextRenderer]::MeasureText($Text, $Font).Width -le $MaxWidth) { return $Text }
+    $ell = [string][char]0x2026   # single-glyph ellipsis
+    for ($keep = $Text.Length - 1; $keep -ge 6; $keep--) {
+        $head = [int][Math]::Ceiling($keep / 2.0)
+        $tail = $keep - $head
+        $cand = $Text.Substring(0, $head) + $ell + $Text.Substring($Text.Length - $tail)
+        if ([System.Windows.Forms.TextRenderer]::MeasureText($cand, $Font).Width -le $MaxWidth) { return $cand }
+    }
+    return $Text
+}
+function Set-PathLabel {
+    param($Label, [string]$Path)
+    $full = if ([string]::IsNullOrWhiteSpace($Path)) { '(not set yet)' } else { $Path }
+    $Label.Text = Get-FittedText -Text $full -Font $Label.Font -MaxWidth $Label.Width
+    $script:Tip.SetToolTip($Label, $full)
 }
 
 # ---------------------------------------------------------------------------
@@ -126,74 +173,97 @@ function New-Button {
 # ---------------------------------------------------------------------------
 $form = New-Object System.Windows.Forms.Form
 $form.Text            = 'STALKER GAMMA Save Backup'
-$form.ClientSize      = New-Object System.Drawing.Size(680, 620)
+$form.ClientSize      = New-Object System.Drawing.Size(700, 640)
 $form.StartPosition   = 'CenterScreen'
 $form.FormBorderStyle = 'FixedSingle'
 $form.MaximizeBox     = $false
 $form.BackColor       = $cBg
 $form.Font            = $fBody
+$form.KeyPreview      = $true
 
 $icoPath = Join-Path $scriptDir 'stalker-gamma-backup.ico'
 if (Test-Path -LiteralPath $icoPath) { try { $form.Icon = New-Object System.Drawing.Icon $icoPath } catch { } }
 
 # --- Header ---
-$header = New-Panel 0 0 680 64 $cHeader
-$hTitle1 = New-Label 'STALKER GAMMA' 16 11 230 26 $cAccent $fTitle
-$hTitle2 = New-Label 'SAVE BACKUP'   228 16 220 24 $cText  (New-Object System.Drawing.Font('Segoe UI', 13))
-$hSub    = New-Label 'Automatic save protection - never lose a run' 18 40 420 16 $cMuted $fSub
-$hVer    = New-Label ("v{0}" -f $script:AppVersion) 580 12 84 18 $cMuted $fSmall 'TopRight'
-$header.Controls.AddRange(@($hTitle1, $hTitle2, $hSub, $hVer))
+$header  = New-Panel 0 0 700 72 $cHeader
+$hAccent = New-Panel 0 0 700 3 $cAccent
+$hTitle1 = New-Label 'STALKER GAMMA' 18 13 210 28 $cAccent $fTitle
+$hTitle2 = New-Label 'SAVE BACKUP'   234 18 230 24 $cText  $fTitle2
+$hSub    = New-Label 'Automatic save protection - never lose a run' 20 45 440 16 $cMuted $fSub
+$hVer    = New-Label ("v{0}" -f $script:AppVersion) 596 14 90 18 $cFaint $fSmall 'TopRight'
+$header.Controls.AddRange(@($hAccent, $hTitle1, $hTitle2, $hSub, $hVer))
 $form.Controls.Add($header)
 
 # --- Status card ---
-$cardStatus = New-Panel 16 80 648 50 $cCard
-$dot    = New-Label $symDot 12 12 22 24 $cMuted (New-Object System.Drawing.Font('Segoe UI', 13, [System.Drawing.FontStyle]::Bold))
-$status = New-Label 'Idle' 36 15 360 22 $cMuted $fBodyB
-$lblDrive = New-Label '' 430 15 206 22 $cMuted $fBody 'TopRight'
-$cardStatus.Controls.AddRange(@($dot, $status, $lblDrive))
+$cardStatus  = New-Panel 16 82 668 70 $cCard
+$accentStrip = New-Panel 0 0 5 70 $cMuted
+$dot         = New-Label $symDot 16 23 20 24 $cMuted (New-Object System.Drawing.Font('Segoe UI', 13, [System.Drawing.FontStyle]::Bold))
+$stateTitle  = New-Label 'Idle' 40 11 400 24 $cMuted $fState
+$stateSub    = New-Label '' 42 39 480 18 $cMuted $fBody
+$lblDrive    = New-Label '' 470 13 188 18 $cMuted $fSmall 'TopRight'
+$cardStatus.Controls.AddRange(@($accentStrip, $dot, $stateTitle, $stateSub, $lblDrive))
 $form.Controls.Add($cardStatus)
 
-# --- Info card ---
-$cardInfo = New-Panel 16 138 648 96 $cCard
-$kSave  = New-Label 'Saves'    14 12 90 18 $cMuted $fBody
-$kBak   = New-Label 'Backups'  14 38 90 18 $cMuted $fBody
-$kWatch = New-Label 'Watching' 14 64 90 18 $cMuted $fBody
-$lblSaveVal  = New-Label '' 108 12 528 18 $cText $fBody
-$lblBakVal   = New-Label '' 108 38 528 18 $cText $fBody
-$lblWatchVal = New-Label '' 108 64 528 18 $cText $fBody
-$cardInfo.Controls.AddRange(@($kSave, $kBak, $kWatch, $lblSaveVal, $lblBakVal, $lblWatchVal))
+# --- Info card (folders + rules) ---
+$cardInfo = New-Panel 16 162 668 92 $cCard
+$kSave  = New-Label 'Saves'    16 13 86 18 $cMuted $fBody
+$kBak   = New-Label 'Backups'  16 39 86 18 $cMuted $fBody
+$kRule  = New-Label 'Rules'    16 65 86 18 $cMuted $fBody
+$lblSaveVal = New-Label '' 104 13 548 18 $cText $fBody
+$lblBakVal  = New-Label '' 104 39 548 18 $cText $fBody
+$lblRuleVal = New-Label '' 104 65 548 18 $cText $fBody
+$cardInfo.Controls.AddRange(@($kSave, $kBak, $kRule, $lblSaveVal, $lblBakVal, $lblRuleVal))
 $form.Controls.Add($cardInfo)
 
 # --- Primary action ---
-$btnToggle = New-Button "$symPlay   Start Watching" 16 246 648 50 $cAccent $cBlack (New-Object System.Drawing.Font('Segoe UI', 12, [System.Drawing.FontStyle]::Bold))
+$btnToggle = New-Button "$symPlay   Start Watching" 16 266 668 52 $cAccent $cBlack $fBtnBig
+$btnToggle.TabIndex = 0
 $form.Controls.Add($btnToggle)
 
 # --- Secondary actions ---
-$btnNow  = New-Button 'Backup Now'      16  306 156 40 $cCard $cText
-$btnMile = New-Button 'Take Milestone'  180 306 156 40 $cBlue $cWhite
-$btnOpen = New-Button 'Open Folder'     344 306 156 40 $cCard $cText
-$btnSet  = New-Button "$symGear  Settings" 508 306 156 40 $cCard $cText
+$btnNow  = New-Button 'Backup Now'                 16  330 158 42 $cCard $cText
+$btnMile = New-Button "$symFlag  Take Milestone"   186 330 158 42 $cBlue $cWhite
+$btnOpen = New-Button 'Open Folder'                356 330 158 42 $cCard $cText
+$btnSet  = New-Button "$symGear  Settings"         526 330 158 42 $cCard $cText
+$btnNow.TabIndex = 1; $btnMile.TabIndex = 2; $btnOpen.TabIndex = 3; $btnSet.TabIndex = 4
 $form.Controls.AddRange(@($btnNow, $btnMile, $btnOpen, $btnSet))
 
-# --- Activity ---
-$lblAct  = New-Label 'ACTIVITY' 16 356 200 18 $cMuted $fBodyB
-$btnClear = New-Button 'Clear' 588 352 76 26 $cCard $cMuted $fSmall
+# --- Activity header ---
+$lblAct    = New-Label 'ACTIVITY' 16 388 200 18 $cMuted $fBodyB
+$btnRestore = New-Button 'How to Restore' 482 384 120 26 $cCard $cText $fSmall
+$btnClear   = New-Button 'Clear'          614 384 70  26 $cCard $cMuted $fSmall
+$btnRestore.TabIndex = 5; $btnClear.TabIndex = 6
+
+# --- Activity log ---
 $log = New-Object System.Windows.Forms.RichTextBox
-$log.SetBounds(16, 380, 648, 198)
+$log.SetBounds(16, 410, 668, 188)
 $log.ReadOnly = $true
-$log.BackColor = (C 15 16 17)
+$log.BackColor = $cLogBg
 $log.ForeColor = $cText
 $log.Font = $fMono
 $log.BorderStyle = 'None'
 $log.HideSelection = $false
-$form.Controls.AddRange(@($lblAct, $btnClear, $log))
+$log.TabIndex = 7
+$form.Controls.AddRange(@($lblAct, $btnRestore, $btnClear, $log))
 
 # --- Footer ---
-$footer = New-Panel 0 590 680 30 $cHeader
-$lblFoot = New-Label '' 16 7 500 16 $cMuted $fSmall
-$lblFootR = New-Label 'STALKER GAMMA Save Backup' 380 7 284 16 $cMuted $fSmall 'TopRight'
+$footer   = New-Panel 0 610 700 30 $cHeader
+$lblFoot  = New-Label '' 16 7 430 16 $cFaint $fSmall
+$lblFootR = New-Label 'Originals are never modified' 454 7 230 16 $cFaint $fSmall 'TopRight'
 $footer.Controls.AddRange(@($lblFoot, $lblFootR))
 $form.Controls.Add($footer)
+
+# ---------------------------------------------------------------------------
+# Tooltips
+# ---------------------------------------------------------------------------
+$script:Tip.SetToolTip($btnToggle, 'Start or stop automatic backups. While watching, every new or changed save is copied the moment it appears.')
+$script:Tip.SetToolTip($btnNow,    'Back up all current saves once, right now.')
+$script:Tip.SetToolTip($btnMile,   'Take a permanent snapshot of all current saves. Milestones are never auto-deleted - ideal before a risky fight or for hardcore / Invictus runs.')
+$script:Tip.SetToolTip($btnOpen,   'Open the backup folder in Windows Explorer.')
+$script:Tip.SetToolTip($btnSet,    'Choose your save folder, backup folder and backup rules. No JSON editing needed.')
+$script:Tip.SetToolTip($btnRestore,'Step-by-step guide for putting a backed-up save back into the game.')
+$script:Tip.SetToolTip($btnClear,  'Clear the on-screen activity log (does not touch any files).')
+$script:Tip.SetToolTip($lblDrive,  'Status of the drive that holds your backup folder.')
 
 # ---------------------------------------------------------------------------
 # UI helpers
@@ -201,8 +271,11 @@ $form.Controls.Add($footer)
 function Add-LogLine {
     param($line, $level)
     $color = switch ($level) {
-        'ERROR'   { $cRed }   'WARN'  { $cAmber }
-        'SUCCESS' { $cAccent } 'DRYRUN' { $cBlue }
+        'ERROR'   { $cRed }
+        'WARN'    { $cAmber }
+        'SUCCESS' { $cAccent }
+        'DRYRUN'  { $cBlue }
+        'HINT'    { $cFaint }
         default   { $cMuted }
     }
     $log.SelectionStart = $log.TextLength
@@ -214,22 +287,61 @@ function Add-LogLine {
         $log.Select(0, $log.GetFirstCharIndexFromLine(200)); $log.SelectedText = ''
     }
 }
-$script:LogSink = { param($line, $level) Add-LogLine $line $level }
 
-function Set-Status {
-    param($text, $color)
-    $status.Text = $text; $status.ForeColor = $color; $dot.ForeColor = $color
+# Mirror engine log lines into the on-screen log, and remember the last successful
+# backup so the status area can show a reassuring "last backup at HH:mm:ss".
+$script:LogSink = {
+    param($line, $level)
+    if ($level -eq 'SUCCESS' -and ($line -like '*Backed up*' -or $line -like '*Milestone saved*')) {
+        $script:LastBackupTime = Get-Date
+    }
+    Add-LogLine $line $level
+}
+
+# The single source of truth for what the status area shows.
+function Set-AppState {
+    param(
+        [ValidateSet('Idle', 'Watching', 'WaitingDrive', 'BackingUp', 'Error')] [string] $State,
+        [string] $Detail
+    )
+    switch ($State) {
+        'Idle'         { $col = $cMuted;  $title = 'Idle';                      $sub = 'Not watching. Click "Start Watching" to protect your saves.' }
+        'Watching'     { $col = $cAccent; $title = 'Watching';                  $sub = 'Your saves are backed up automatically as you play.' }
+        'WaitingDrive' { $col = $cAmber;  $title = 'Waiting for backup drive';  $sub = 'Reconnect the backup drive - backups resume automatically.' }
+        'BackingUp'    { $col = $cBlue;   $title = 'Backing up...';             $sub = 'Copying your latest saves to the backup folder.' }
+        'Error'        { $col = $cRed;    $title = 'Needs attention';           $sub = 'Something went wrong - see the activity log below.' }
+    }
+    if ($State -eq 'Watching' -and $script:LastBackupTime) {
+        $sub = ('Protected - last backup at {0}.' -f $script:LastBackupTime.ToString('HH:mm:ss'))
+    }
+    if ($Detail) { $sub = $Detail }
+
+    $script:AppState       = $State
+    $stateTitle.Text       = $title
+    $stateTitle.ForeColor  = $col
+    $stateSub.Text         = $sub
+    $dot.ForeColor         = $col
+    $accentStrip.BackColor = $col
+    if ($script:Notify) { $script:Notify.Text = "STALKER GAMMA Backup - $title" }
 }
 
 function Update-Info {
-    $lblSaveVal.Text  = $script:Config.saveFolderPath
-    $lblBakVal.Text   = $script:Config.backupFolderPath
+    Set-PathLabel $lblSaveVal $script:Config.saveFolderPath
+    Set-PathLabel $lblBakVal  $script:Config.backupFolderPath
     $exts = ($script:Config.includeExtensions -join '  ')
-    $lblWatchVal.Text = "$exts      -      keep newest $($script:Config.keepMaxBackupsPerSave) per save" +
-                        $(if ($script:Config.enableZipBackup) { '   (zip)' } else { '' })
-    $lblFoot.Text     = "Config: $($script:ConfigPath)"
+    $zip  = if ($script:Config.enableZipBackup) { '   (.zip)' } else { '' }
+    $lblRuleVal.Text = "$exts      -      keep newest $($script:Config.keepMaxBackupsPerSave) per save$zip"
+    $script:Tip.SetToolTip($lblRuleVal, "File types backed up: $($script:Config.includeExtensions -join ' ')`r`nKeep newest $($script:Config.keepMaxBackupsPerSave) backups per save (milestones are exempt).`r`nZip backups: $(if ($script:Config.enableZipBackup) { 'on' } else { 'off' }).")
+    $lblFoot.Text = Get-FittedText -Text ("Config: $($script:ConfigPath)") -Font $lblFoot.Font -MaxWidth $lblFoot.Width
+    $script:Tip.SetToolTip($lblFoot, $script:ConfigPath)
 }
+
+function Show-EmptyLogHint {
+    Add-LogLine '  Activity and backups will appear here while you play.' 'HINT'
+}
+
 Update-Info
+Set-AppState 'Idle'
 
 # ---------------------------------------------------------------------------
 # Watcher (polls the save folder - responsive and reliable inside a GUI)
@@ -240,40 +352,59 @@ $timer.add_Tick({
     if (-not $script:Watching) { return }
     try {
         if (-not (Test-BackupTargetAvailable)) {
-            Set-Status 'Waiting for backup drive...' $cAmber
+            Set-AppState 'WaitingDrive'
             $lblDrive.Text = 'drive: offline'; $lblDrive.ForeColor = $cAmber
             return
         }
         $lblDrive.Text = 'drive: ready'; $lblDrive.ForeColor = $cAccent
-        Set-Status 'Watching - saves are backed up automatically' $cAccent
         $files = @(Get-ChildItem -LiteralPath $script:Config.saveFolderPath -File |
                    Where-Object { $script:Config.includeExtensions -contains $_.Extension.ToLowerInvariant() })
         foreach ($f in $files) { Invoke-BackupForFile -FilePath $f.FullName -StabilityAttempts 1 }
+        Set-AppState 'Watching'
     }
-    catch { Write-Log "Watch error: $($_.Exception.Message)" 'ERROR' }
+    catch {
+        Write-Log "Watch error: $($_.Exception.Message)" 'ERROR'
+        Set-AppState 'Error'
+    }
 })
 
 function Start-Watch {
+    if (-not (Test-Path -LiteralPath $script:Config.saveFolderPath)) {
+        [System.Windows.Forms.MessageBox]::Show(
+            "Your save folder was not found:`n$($script:Config.saveFolderPath)`n`nOpen Settings and point ""Save folder"" at your STALKER Anomaly / GAMMA savedgames folder.",
+            'Save folder not found', 'OK', 'Warning') | Out-Null
+        Write-Log "Cannot start watching: save folder not found ($($script:Config.saveFolderPath))." 'ERROR'
+        return
+    }
     if (-not (Test-BackupTargetAvailable)) {
-        Write-Log "Backup drive not available yet - will start saving once it is connected." 'WARN'
+        Write-Log "Backup drive not available yet - watching will start saving once it is connected." 'WARN'
     }
     $script:Watching = $true
     $timer.Start()
     $btnToggle.Text = "$symStop   Stop Watching"; $btnToggle.BackColor = $cRed; $btnToggle.ForeColor = $cWhite
-    Set-Status 'Watching - saves are backed up automatically' $cAccent
-    if ($script:Notify)     { $script:Notify.Text = 'STALKER GAMMA Backup - Watching' }
+    Set-AppState 'Watching'
     if ($script:TrayToggle) { $script:TrayToggle.Text = "$symStop  Stop Watching" }
-    Write-Log "Watch mode started." 'INFO'
+    Write-Log "Watch mode started - protecting your saves." 'INFO'
 }
 function Stop-Watch {
     $script:Watching = $false
     $timer.Stop()
     $btnToggle.Text = "$symPlay   Start Watching"; $btnToggle.BackColor = $cAccent; $btnToggle.ForeColor = $cBlack
-    Set-Status 'Idle' $cMuted
+    Set-AppState 'Idle'
     $lblDrive.Text = ''
-    if ($script:Notify)     { $script:Notify.Text = 'STALKER GAMMA Backup - Idle' }
     if ($script:TrayToggle) { $script:TrayToggle.Text = "$symPlay  Start Watching" }
     Write-Log "Watch mode stopped." 'INFO'
+}
+
+# Run a synchronous backup action while showing a transient "Backing up..." state.
+function Invoke-WithBackingUpState {
+    param([scriptblock] $Action)
+    Set-AppState 'BackingUp'
+    [System.Windows.Forms.Application]::DoEvents()
+    try { & $Action }
+    finally {
+        if ($script:Watching) { Set-AppState 'Watching' } else { Set-AppState 'Idle' }
+    }
 }
 
 # ---------------------------------------------------------------------------
@@ -282,26 +413,33 @@ function Stop-Watch {
 function Show-SettingsDialog {
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text = 'Settings'
-    $dlg.ClientSize = New-Object System.Drawing.Size(560, 360)
+    $dlg.ClientSize = New-Object System.Drawing.Size(580, 558)
     $dlg.StartPosition = 'CenterParent'
     $dlg.FormBorderStyle = 'FixedDialog'
     $dlg.MaximizeBox = $false; $dlg.MinimizeBox = $false
     $dlg.BackColor = $cBg; $dlg.Font = $fBody
     if ($form.Icon) { $dlg.Icon = $form.Icon }
 
+    function Add-Section {
+        param($text, $y)
+        $dlg.Controls.Add((New-Label $text 18 $y 540 18 $cAccent $fBodyB))
+        $dlg.Controls.Add((New-Panel 18 ($y + 20) 544 1 $cLine))
+    }
     function Add-Field {
-        param($label, $y, $value, $browse)
-        $l  = New-Label $label 16 ($y + 4) 110 20 $cMuted $fBody
+        param($label, $y, $value, $browse, $help)
+        $dlg.Controls.Add((New-Label $label 18 ($y + 4) 96 20 $cMuted $fBody))
         $tb = New-Object System.Windows.Forms.TextBox
-        $tb.SetBounds(132, $y, $(if ($browse) { 330 } else { 412 }), 24)
-        $tb.BackColor = $cCard; $tb.ForeColor = $cText; $tb.BorderStyle = 'FixedSingle'
+        $tb.SetBounds(118, $y, $(if ($browse) { 360 } else { 444 }), 24)
+        $tb.BackColor = $cCardHi; $tb.ForeColor = $cText; $tb.BorderStyle = 'FixedSingle'
         $tb.Text = [string]$value
-        $dlg.Controls.AddRange(@($l, $tb))
+        $dlg.Controls.Add($tb)
         if ($browse) {
-            $b = New-Button 'Browse' 470 ($y - 1) 74 25 $cCard $cText $fSmall
-            $b.Tag = $tb
-            $b.Add_Click($browse)
+            $b = New-Button 'Browse' 488 ($y - 1) 74 26 $cCard $cText $fSmall
+            $b.Tag = $tb; $b.Add_Click($browse)
             $dlg.Controls.Add($b)
+        }
+        if ($help) {
+            $dlg.Controls.Add((New-Label $help 118 ($y + 26) 452 16 $cFaint $fSmall))
         }
         return $tb
     }
@@ -323,48 +461,115 @@ function Show-SettingsDialog {
         if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { $tb.Text = $d.FileName }
     }
 
-    $tbSave = Add-Field 'Save folder'      20  $script:Config.saveFolderPath      $pickFolder
-    $tbBak  = Add-Field 'Backup folder'    58  $script:Config.backupFolderPath    $pickFolder
-    $tbMile = Add-Field 'Milestone folder' 96  $script:Config.milestoneFolderPath $pickFolder
-    $tbLog  = Add-Field 'Log file'         134 $script:Config.logFilePath         $pickFile
-    $tbExt  = Add-Field 'Extensions'       172 ($script:Config.includeExtensions -join ' ') $null
+    # --- FOLDERS ---
+    Add-Section 'FOLDERS' 14
+    $tbSave = Add-Field 'Save folder'      44  $script:Config.saveFolderPath      $pickFolder 'Your STALKER Anomaly / GAMMA "appdata\savedgames" folder (the source).'
+    $tbBak  = Add-Field 'Backup folder'    96  $script:Config.backupFolderPath    $pickFolder 'Where rolling backups are written. A second drive is recommended.'
+    $tbMile = Add-Field 'Milestone folder' 148 $script:Config.milestoneFolderPath $pickFolder 'Permanent snapshots, never auto-deleted. Blank = a "Milestones" subfolder.'
 
-    $lKeep = New-Label 'Keep backups' 16 214 110 20 $cMuted $fBody
+    # --- BACKUP BEHAVIOR ---
+    Add-Section 'BACKUP BEHAVIOR' 206
+    $tbExt = Add-Field 'File types' 236 ($script:Config.includeExtensions -join ' ') $null 'Save file types to copy. .scop + .scoc are a full save; .dds is the thumbnail.'
+
+    $dlg.Controls.Add((New-Label 'Keep backups' 18 292 96 20 $cMuted $fBody))
     $numKeep = New-Object System.Windows.Forms.NumericUpDown
-    $numKeep.SetBounds(132, 210, 80, 24); $numKeep.Minimum = 1; $numKeep.Maximum = 100000
-    $numKeep.BackColor = $cCard; $numKeep.ForeColor = $cText
+    $numKeep.SetBounds(118, 288, 84, 24); $numKeep.Minimum = 1; $numKeep.Maximum = 100000
+    $numKeep.BackColor = $cCardHi; $numKeep.ForeColor = $cText; $numKeep.BorderStyle = 'FixedSingle'
     $numKeep.Value = [Math]::Min(100000, [Math]::Max(1, [int]$script:Config.keepMaxBackupsPerSave))
 
-    $lDelay = New-Label 'Delay (sec)' 240 214 70 20 $cMuted $fBody
+    $dlg.Controls.Add((New-Label 'Settle delay (sec)' 232 292 110 20 $cMuted $fBody))
     $numDelay = New-Object System.Windows.Forms.NumericUpDown
-    $numDelay.SetBounds(316, 210, 70, 24); $numDelay.Minimum = 0; $numDelay.Maximum = 120
-    $numDelay.BackColor = $cCard; $numDelay.ForeColor = $cText
+    $numDelay.SetBounds(346, 288, 70, 24); $numDelay.Minimum = 0; $numDelay.Maximum = 120
+    $numDelay.BackColor = $cCardHi; $numDelay.ForeColor = $cText; $numDelay.BorderStyle = 'FixedSingle'
     $numDelay.Value = [Math]::Min(120, [Math]::Max(0, [int]$script:Config.backupDelaySeconds))
+    $dlg.Controls.Add((New-Label 'Copies kept per save. Milestones are permanent and never count toward this limit.' 118 316 452 16 $cFaint $fSmall))
 
     $chkZip = New-Object System.Windows.Forms.CheckBox
     $chkZip.Text = 'Store each backup as a .zip'
-    $chkZip.SetBounds(132, 248, 300, 24)
+    $chkZip.SetBounds(116, 342, 320, 22)
     $chkZip.ForeColor = $cText; $chkZip.BackColor = [System.Drawing.Color]::Transparent
     $chkZip.Checked = [bool]$script:Config.enableZipBackup
+    $dlg.Controls.Add($chkZip)
+    $dlg.Controls.Add((New-Label 'Zip saves space; each restore must be extracted first. Off = plain copies (easiest to restore).' 118 366 452 16 $cFaint $fSmall))
 
-    $btnSave   = New-Button 'Save'   300 304 116 32 $cAccent $cBlack
-    $btnCancel = New-Button 'Cancel' 428 304 116 32 $cCard   $cText
-    $dlg.Controls.AddRange(@($lKeep, $numKeep, $lDelay, $numDelay, $chkZip, $btnSave, $btnCancel))
+    # --- ADVANCED & LOGGING ---
+    Add-Section 'ADVANCED & LOGGING' 396
+    $tbLog = Add-Field 'Log file' 426 $script:Config.logFilePath $pickFile 'Where the text log is written. Handy if you ever need to see what happened.'
+
+    # --- Validation summary + buttons ---
+    $lblErr = New-Label '' 18 470 544 30 $cRed $fSmall
+    $dlg.Controls.Add($lblErr)
+
+    $numKeep.TabIndex = 10; $numDelay.TabIndex = 11; $chkZip.TabIndex = 12
+    $dlg.Controls.AddRange(@($numKeep, $numDelay))
+
+    $btnReset  = New-Button 'Reset to defaults' 18  510 150 32 $cCard   $cMuted $fSmall
+    $btnSave   = New-Button 'Save'              320 510 116 32 $cAccent $cBlack
+    $btnCancel = New-Button 'Cancel'            446 510 116 32 $cCard   $cText
+    $dlg.Controls.AddRange(@($btnReset, $btnSave, $btnCancel))
+
+    $script:Tip.SetToolTip($btnReset, 'Reload the fields from the bundled example. Nothing is saved until you click Save.')
+
+    $btnReset.Add_Click({
+        if ([System.Windows.Forms.MessageBox]::Show(
+                'Reset all fields to the example defaults? Nothing is saved until you click Save.',
+                'Reset to defaults', 'YesNo', 'Question') -ne [System.Windows.Forms.DialogResult]::Yes) { return }
+        try {
+            $ex = Import-BackupConfig -ConfigPath $script:ExamplePath
+            $tbSave.Text = $ex.saveFolderPath; $tbBak.Text = $ex.backupFolderPath
+            $tbMile.Text = $ex.milestoneFolderPath; $tbLog.Text = $ex.logFilePath
+            $tbExt.Text  = ($ex.includeExtensions -join ' ')
+            $numKeep.Value  = [Math]::Min(100000, [Math]::Max(1, [int]$ex.keepMaxBackupsPerSave))
+            $numDelay.Value = [Math]::Min(120, [Math]::Max(0, [int]$ex.backupDelaySeconds))
+            $chkZip.Checked = [bool]$ex.enableZipBackup
+            $lblErr.ForeColor = $cMuted; $lblErr.Text = 'Fields reset to example defaults. Review them, then click Save.'
+        }
+        catch {
+            $lblErr.ForeColor = $cRed; $lblErr.Text = "Could not read the example config: $($_.Exception.Message)"
+        }
+    })
 
     $btnCancel.Add_Click({ $dlg.DialogResult = [System.Windows.Forms.DialogResult]::Cancel; $dlg.Close() })
+
     $btnSave.Add_Click({
+        $lblErr.ForeColor = $cRed
         $save = $tbSave.Text.Trim(); $bak = $tbBak.Text.Trim()
         $mile = $tbMile.Text.Trim(); $logp = $tbLog.Text.Trim()
+
+        # Hard validation (block save).
         if (-not $save -or -not $bak -or -not $logp) {
-            [System.Windows.Forms.MessageBox]::Show('Save folder, Backup folder and Log file are required.', 'Settings', 'OK', 'Warning') | Out-Null
+            $lblErr.Text = 'Save folder, Backup folder and Log file are all required.'
             return
         }
         $exts = @($tbExt.Text -split '[,;\s]+' | Where-Object { $_ } | ForEach-Object {
             $x = $_.Trim().ToLowerInvariant(); if (-not $x.StartsWith('.')) { $x = ".$x" }; $x })
         if ($exts.Count -eq 0) {
-            [System.Windows.Forms.MessageBox]::Show('Enter at least one extension, e.g. .scop .scoc', 'Settings', 'OK', 'Warning') | Out-Null
+            $lblErr.Text = 'Enter at least one file type, e.g.  .scop .scoc .dds'
             return
         }
+        if ($save -eq $bak) {
+            $lblErr.Text = 'The Save folder and Backup folder must be different.'
+            return
+        }
+
+        # Soft validation (warn, but allow - the drive may simply be offline now).
+        $warnings = @()
+        if (-not (Test-Path -LiteralPath $save -PathType Container)) {
+            $warnings += "- The Save folder does not exist yet:`n  $save"
+        }
+        try {
+            $bakQual = Split-Path -Qualifier $bak
+            if ($bakQual -and -not (Test-Path -LiteralPath "$bakQual\")) {
+                $warnings += "- The Backup folder's drive ($bakQual) is not connected right now."
+            }
+        } catch { }
+        if ($warnings.Count -gt 0) {
+            $ans = [System.Windows.Forms.MessageBox]::Show(
+                ("Heads up:`n`n{0}`n`nSave these settings anyway?" -f ($warnings -join "`n`n")),
+                'Check your folders', 'YesNo', 'Warning')
+            if ($ans -ne [System.Windows.Forms.DialogResult]::Yes) { $lblErr.Text = 'Not saved - adjust the folders above.'; return }
+        }
+
         if (-not $mile) { $mile = Join-Path $bak 'Milestones' }
         $newCfg = [PSCustomObject]@{
             saveFolderPath        = $save
@@ -379,13 +584,15 @@ function Show-SettingsDialog {
         try {
             Save-BackupConfig -Config $newCfg -Path $script:ConfigPath
             $script:Config = Import-BackupConfig -ConfigPath $script:ConfigPath
+            $script:BackupCache = @{}   # paths may have changed; re-evaluate from scratch
             Update-Info
+            if (-not $script:Watching) { Set-AppState 'Idle' }
             Write-Log 'Settings saved.' 'SUCCESS'
             $dlg.DialogResult = [System.Windows.Forms.DialogResult]::OK
             $dlg.Close()
         }
         catch {
-            [System.Windows.Forms.MessageBox]::Show("Could not save settings:`n$($_.Exception.Message)", 'Settings', 'OK', 'Error') | Out-Null
+            $lblErr.Text = "Could not save settings: $($_.Exception.Message)"
         }
     })
 
@@ -396,6 +603,125 @@ function Show-SettingsDialog {
 }
 
 # ---------------------------------------------------------------------------
+# How-to-Restore help dialog
+# ---------------------------------------------------------------------------
+function Show-RestoreDialog {
+    $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Text = 'How to restore a save'
+    $dlg.ClientSize = New-Object System.Drawing.Size(560, 466)
+    $dlg.StartPosition = 'CenterParent'
+    $dlg.FormBorderStyle = 'FixedDialog'
+    $dlg.MaximizeBox = $false; $dlg.MinimizeBox = $false
+    $dlg.BackColor = $cBg; $dlg.Font = $fBody
+    if ($form.Icon) { $dlg.Icon = $form.Icon }
+
+    $dlg.Controls.Add((New-Label 'Restoring a backed-up save' 20 16 520 24 $cAccent $fState))
+    $dlg.Controls.Add((New-Label 'This app never overwrites your saves for you - you stay in full control.' 20 46 520 16 $cMuted $fBody))
+
+    $box = New-Object System.Windows.Forms.RichTextBox
+    $box.SetBounds(20, 74, 520, 332)
+    $box.ReadOnly = $true; $box.BorderStyle = 'None'
+    $box.BackColor = $cLogBg; $box.ForeColor = $cText; $box.Font = $fBody
+    $box.Text = @"
+1.  Close the game completely (STALKER must not be running).
+
+2.  Click "Open backup folder" below and find the save you want.
+    Newer backups have a later __YYYY-MM-DD_HH-mm-ss timestamp in the name.
+
+3.  A full save is the matching .scop + .scoc pair with the SAME timestamp -
+    copy BOTH of them back together. The .dds file is just the thumbnail
+    (optional). Milestones are in the "Milestones" subfolder.
+
+4.  If your backups are .zip files, extract the file(s) first.
+
+5.  Copy the file(s) into your savedgames folder (your "Save folder").
+
+6.  Remove the timestamp from each name, for example:
+        quicksave__2026-06-04_22-30-15.scop   ->   quicksave.scop
+        quicksave__2026-06-04_22-30-15.scoc   ->   quicksave.scoc
+
+7.  Launch the game and load the save.
+
+Tip: copying into the save folder does not affect your backups - they stay
+exactly where they are.
+"@
+    $dlg.Controls.Add($box)
+
+    $btnOpen2 = New-Button 'Open backup folder' 20  420 180 32 $cCard   $cText
+    $btnClose = New-Button 'Close'              444 420 96  32 $cAccent $cBlack
+    $dlg.Controls.AddRange(@($btnOpen2, $btnClose))
+    $btnOpen2.Add_Click({
+        try {
+            if (Test-Path -LiteralPath $script:Config.backupFolderPath) {
+                Start-Process explorer.exe -ArgumentList $script:Config.backupFolderPath
+            } else {
+                [System.Windows.Forms.MessageBox]::Show('Backup folder is not available (is the drive connected?).', 'Restore', 'OK', 'Warning') | Out-Null
+            }
+        } catch { }
+    })
+    $btnClose.Add_Click({ $dlg.Close() })
+    $dlg.AcceptButton = $btnClose
+    $dlg.CancelButton = $btnClose
+    [void]$dlg.ShowDialog($form)
+    $dlg.Dispose()
+}
+
+# ---------------------------------------------------------------------------
+# First-run / onboarding welcome
+# ---------------------------------------------------------------------------
+function Test-NeedsSetup {
+    $save = $script:Config.saveFolderPath
+    return (-not $save -or -not (Test-Path -LiteralPath $save -PathType Container))
+}
+
+function Show-WelcomeDialog {
+    $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Text = 'Welcome'
+    $dlg.ClientSize = New-Object System.Drawing.Size(520, 372)
+    $dlg.StartPosition = 'CenterParent'
+    $dlg.FormBorderStyle = 'FixedDialog'
+    $dlg.MaximizeBox = $false; $dlg.MinimizeBox = $false
+    $dlg.BackColor = $cBg; $dlg.Font = $fBody
+    if ($form.Icon) { $dlg.Icon = $form.Icon }
+
+    $dlg.Controls.Add((New-Panel 0 0 520 4 $cAccent))
+    $dlg.Controls.Add((New-Label 'Welcome, stalker' 24 24 472 28 $cAccent $fTitle))
+    $dlg.Controls.Add((New-Label "Let's protect your STALKER GAMMA / Anomaly saves. It takes about a minute:" 24 58 472 18 $cText $fBody))
+
+    $steps = New-Object System.Windows.Forms.RichTextBox
+    $steps.SetBounds(24, 88, 472, 150)
+    $steps.ReadOnly = $true; $steps.BorderStyle = 'None'
+    $steps.BackColor = $cBg; $steps.ForeColor = $cText; $steps.Font = $fBody
+    $steps.Text = @"
+1.  Pick your save folder - your Anomaly / GAMMA "appdata\savedgames" folder.
+
+2.  Pick a backup folder - ideally on a second drive, so a disk failure
+    can't take your saves and backups at once.
+
+3.  Click "Start Watching" - every new or changed save is then copied
+    automatically while you play.
+"@
+    $dlg.Controls.Add($steps)
+
+    $safe = New-Panel 24 244 472 56 $cCard
+    $safe.Controls.Add((New-Label 'Safe by design' 14 8 200 16 $cAccent $fBodyB))
+    $safe.Controls.Add((New-Label 'Your saves are only ever read and copied - never changed, moved, or deleted.' 14 28 446 18 $cMuted $fSmall))
+    $dlg.Controls.Add($safe)
+
+    $btnSetup = New-Button 'Choose folders now' 24  316 200 36 $cAccent $cBlack
+    $btnLater = New-Button 'Skip for now'       400 316 96  36 $cCard   $cText
+    $dlg.Controls.AddRange(@($btnSetup, $btnLater))
+    $btnSetup.Add_Click({ $dlg.Tag = 'setup'; $dlg.Close() })
+    $btnLater.Add_Click({ $dlg.Tag = 'later'; $dlg.Close() })
+    $dlg.AcceptButton = $btnSetup
+    $dlg.CancelButton = $btnLater
+    [void]$dlg.ShowDialog($form)
+    $choice = $dlg.Tag
+    $dlg.Dispose()
+    if ($choice -eq 'setup') { Show-SettingsDialog }
+}
+
+# ---------------------------------------------------------------------------
 # Button actions
 # ---------------------------------------------------------------------------
 $btnToggle.Add_Click({ if ($script:Watching) { Stop-Watch } else { Start-Watch } })
@@ -403,7 +729,10 @@ $btnToggle.Add_Click({ if ($script:Watching) { Stop-Watch } else { Start-Watch }
 $btnNow.Add_Click({
     $btnNow.Enabled = $false
     try {
-        if (Test-BackupTargetAvailable) { Write-Log 'Manual one-time backup requested.' 'INFO'; Invoke-BackupAll }
+        if (Test-BackupTargetAvailable) {
+            Write-Log 'Manual one-time backup requested.' 'INFO'
+            Invoke-WithBackingUpState { Invoke-BackupAll }
+        }
         else { Write-Log 'Backup drive not available - connect it first.' 'ERROR' }
     } catch { Write-Log "Backup Now failed: $($_.Exception.Message)" 'ERROR' }
     finally { $btnNow.Enabled = $true }
@@ -412,7 +741,9 @@ $btnNow.Add_Click({
 $btnMile.Add_Click({
     $btnMile.Enabled = $false
     try {
-        if (Test-BackupTargetAvailable) { Invoke-MilestoneBackup }
+        if (Test-BackupTargetAvailable) {
+            Invoke-WithBackingUpState { Invoke-MilestoneBackup }
+        }
         else { Write-Log 'Backup drive not available - connect it first.' 'ERROR' }
     } catch { Write-Log "Milestone failed: $($_.Exception.Message)" 'ERROR' }
     finally { $btnMile.Enabled = $true }
@@ -430,7 +761,8 @@ $btnOpen.Add_Click({
 })
 
 $btnSet.Add_Click({ Show-SettingsDialog })
-$btnClear.Add_Click({ $log.Clear() })
+$btnRestore.Add_Click({ Show-RestoreDialog })
+$btnClear.Add_Click({ $log.Clear(); Show-EmptyLogHint })
 
 # ---------------------------------------------------------------------------
 # System tray
@@ -494,13 +826,21 @@ $form.Add_FormClosed({
     try { if ($script:Notify) { $script:Notify.Visible = $false; $script:Notify.Dispose() } } catch { }
 })
 
+# Show onboarding once the window is up, on first run or if setup looks incomplete.
+$form.Add_Shown({
+    if ($script:FirstRun -or (Test-NeedsSetup)) {
+        Show-WelcomeDialog
+    }
+})
+
 # ---------------------------------------------------------------------------
 # Go
 # ---------------------------------------------------------------------------
 Write-Log "Ready - settings loaded from config." 'INFO'
 Write-Log "Click 'Start Watching' to auto-backup every save while you play." 'INFO'
 Write-Log "Use 'Take Milestone' for a permanent, never-deleted snapshot." 'INFO'
-Write-Log "Change folders any time in Settings. Closing to the X keeps it in the tray." 'INFO'
+Write-Log "Closing the X keeps the app running in the system tray." 'INFO'
+Show-EmptyLogHint
 
 $script:Form = $form
 if (-not $NoShow) {

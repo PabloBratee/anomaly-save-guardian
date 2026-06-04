@@ -13,8 +13,13 @@ Milestones/
 *.dds
 save.*
 
+# Release packages (built by scripts/package-release.ps1)
+dist/
+STALKER-GAMMA-Save-Backup-v*.zip
+
 # Generated preview/scratch
 ui-preview.png
+sgb-*.png
 
 # Windows cruft
 Thumbs.db

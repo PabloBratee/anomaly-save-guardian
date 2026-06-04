@@ -58,7 +58,7 @@ $ErrorActionPreference = 'Stop'
 # ---------------------------------------------------------------------------
 # Script-scope state
 # ---------------------------------------------------------------------------
-$script:AppVersion  = '1.0.0'        # bumped in CHANGELOG.md
+$script:AppVersion  = '1.1.0'        # bumped in CHANGELOG.md
 $script:Config      = $null          # normalized config object
 $script:BackupCache = @{}            # path -> "lastWriteTicks|length" of last backup made
 
