@@ -1,0 +1,10 @@
+{
+  "saveFolderPath": "C:\\Anomaly\\appdata\\savedgames",
+  "backupFolderPath": "D:\\STALKER GAMMA Backups",
+  "milestoneFolderPath": "D:\\STALKER GAMMA Backups\\Milestones",
+  "includeExtensions": [".sav", ".scop", ".scoc", ".dds"],
+  "backupDelaySeconds": 3,
+  "keepMaxBackupsPerSave": 200,
+  "enableZipBackup": false,
+  "logFilePath": "D:\\STALKER GAMMA Backups\\backup-log.txt"
+}

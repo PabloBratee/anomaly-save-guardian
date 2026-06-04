@@ -1,0 +1,22 @@
+# Personal config (machine-specific paths) - keep the .example.json instead
+stalker-gamma-backup-config.json
+
+# Logs
+*.log
+backup-log.txt
+
+# Backups & milestone snapshots - never commit saves
+Milestones/
+*.sav
+*.scop
+*.scoc
+*.dds
+save.*
+
+# Generated preview/scratch
+ui-preview.png
+
+# Windows cruft
+Thumbs.db
+desktop.ini
+*.lnk
