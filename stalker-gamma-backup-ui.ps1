@@ -389,7 +389,7 @@ function Set-AppState {
     )
     switch ($State) {
         'Idle'         { $col = $cMuted;  $title = 'Idle';                      $sub = 'Not watching. Click "Start Watching" to protect your saves.' }
-        'Watching'     { $col = $cAccent; $title = 'Watching';                  $sub = 'Your saves are backed up automatically as you play.' }
+        'Watching'     { $col = $cAccent; $title = 'Watching';                  $sub = 'Protecting saves - complete save groups are backed up as you play.' }
         'WaitingDrive' { $col = $cAmber;  $title = 'Waiting for backup drive';  $sub = 'Reconnect the backup drive - backups resume automatically.' }
         'BackingUp'    { $col = $cBlue;   $title = 'Backing up...';             $sub = 'Copying your latest saves to the backup folder.' }
         'Error'        { $col = $cRed;    $title = 'Needs attention';           $sub = 'Something went wrong - see the activity log below.' }
@@ -412,10 +412,10 @@ function Update-Info {
     Set-PathLabel $lblSaveVal $script:Config.saveFolderPath
     Set-PathLabel $lblBakVal  $script:Config.backupFolderPath
     $exts = ($script:Config.includeExtensions -join '  ')
-    $zip  = if ($script:Config.enableZipBackup) { '   (.zip per save)' } else { '' }
+    $zip  = if ($script:Config.enableZipBackup) { '   zip: one group' } else { '' }
     $mileKeep = if ($script:Config.PSObject.Properties.Name -contains 'keepMaxMilestones') { [int]$script:Config.keepMaxMilestones } else { 5 }
-    $lblRuleVal.Text = "$exts      -      rolling: newest per save; milestones: latest $mileKeep$zip"
-    $script:Tip.SetToolTip($lblRuleVal, "File types backed up: $($script:Config.includeExtensions -join ' ')`r`nA restore point is a complete save group: .scop + .scoc, with optional .dds.`r`nRolling backups keep the newest backup for each save name. Milestones keep the latest $mileKeep milestone restore points.`r`nZip backups: $(if ($script:Config.enableZipBackup) { 'on - each save is stored as one .zip' } else { 'off' }).")
+    $lblRuleVal.Text = "$exts      -      rolling: replaces by name; milestone: newest complete (keep $mileKeep)$zip"
+    $script:Tip.SetToolTip($lblRuleVal, "File types backed up: $($script:Config.includeExtensions -join ' ')`r`nA restore point is a complete save group: .scop + .scoc, .dds optional.`r`nRolling backups replace the previous backup with the same save name. Milestone backs up the newest complete save and keeps the latest $mileKeep milestone restore points.`r`nZip mode stores each complete save group as one .zip when enabled.")
     $lblFootBy.Text = 'Created by'
     $lblFootName.Text = 'GAM33RSFR33AK'
     $script:Tip.SetToolTip($lblFootBy, $creatorCredit)
@@ -551,11 +551,11 @@ function Show-SettingsDialog {
     Add-Section 'FOLDERS' 14
     $tbSave = Add-Field 'Save folder'      44  $script:Config.saveFolderPath      $pickFolder 'Your STALKER Anomaly / GAMMA "appdata\savedgames" folder (the source).'
     $tbBak  = Add-Field 'Backup folder'    96  $script:Config.backupFolderPath    $pickFolder 'Where rolling backups are written. A second drive is recommended.'
-    $tbMile = Add-Field 'Milestone folder' 148 $script:Config.milestoneFolderPath $pickFolder 'Newest-complete-save milestones are kept here. Blank = a "Milestones" subfolder.'
+    $tbMile = Add-Field 'Milestone folder' 148 $script:Config.milestoneFolderPath $pickFolder 'Milestone backs up the newest complete save. Blank = a "Milestones" subfolder.'
 
     # --- BACKUP BEHAVIOR ---
     Add-Section 'BACKUP BEHAVIOR' 206
-    $tbExt = Add-Field 'File types' 236 ($script:Config.includeExtensions -join ' ') $null 'One save = .scop + .scoc (a full save) plus an optional .dds thumbnail, grouped together.'
+    $tbExt = Add-Field 'File types' 236 ($script:Config.includeExtensions -join ' ') $null 'One save = .scop + .scoc, .dds optional. The group is backed up together.'
 
     $dlg.Controls.Add((New-Label 'Keep rolling' 18 292 96 20 $cMuted $fBody))
     $numKeep = New-Object System.Windows.Forms.NumericUpDown
@@ -569,7 +569,7 @@ function Show-SettingsDialog {
     $numMile.BackColor = $cCardHi; $numMile.ForeColor = $cText; $numMile.BorderStyle = 'FixedSingle'
     $mileKeep = if ($script:Config.PSObject.Properties.Name -contains 'keepMaxMilestones') { [int]$script:Config.keepMaxMilestones } else { 5 }
     $numMile.Value = [Math]::Min(100000, [Math]::Max(1, $mileKeep))
-    $dlg.Controls.Add((New-Label 'Rolling backups keep the newest backup for each save name. Milestones keep the latest restore points. Default: 5.' 118 316 452 16 $cFaint $fSmall))
+    $dlg.Controls.Add((New-Label 'Rolling replaces by save name. Milestones keep latest restore points. Default: 5.' 118 316 452 16 $cFaint $fSmall))
 
     $dlg.Controls.Add((New-Label 'Settle delay (sec)' 18 342 110 20 $cMuted $fBody))
     $numDelay = New-Object System.Windows.Forms.NumericUpDown
@@ -578,12 +578,12 @@ function Show-SettingsDialog {
     $numDelay.Value = [Math]::Min(120, [Math]::Max(0, [int]$script:Config.backupDelaySeconds))
 
     $chkZip = New-Object System.Windows.Forms.CheckBox
-    $chkZip.Text = 'Store each save as one .zip'
+    $chkZip.Text = 'Store each complete save group as one .zip'
     $chkZip.SetBounds(116, 386, 320, 22)
     $chkZip.ForeColor = $cText; $chkZip.BackColor = [System.Drawing.Color]::Transparent
     $chkZip.Checked = [bool]$script:Config.enableZipBackup
     $dlg.Controls.Add($chkZip)
-    $dlg.Controls.Add((New-Label 'Zip mode stores each complete save (.scop+.scoc+.dds) as one .zip. Off = plain copies (easiest to restore).' 118 410 452 16 $cFaint $fSmall))
+    $dlg.Controls.Add((New-Label 'Zip mode stores each complete save group as one .zip. .dds optional.' 118 410 452 16 $cFaint $fSmall))
 
     # --- ADVANCED & LOGGING ---
     Add-Section 'ADVANCED & LOGGING' 440
@@ -602,6 +602,9 @@ function Show-SettingsDialog {
     $dlg.Controls.AddRange(@($btnReset, $btnSave, $btnCancel))
 
     $script:Tip.SetToolTip($btnReset, 'Reload the fields from the bundled example. Nothing is saved until you click Save.')
+    $script:Tip.SetToolTip($numKeep, 'Rolling backups replace the previous backup with the same save name. Default: 5.')
+    $script:Tip.SetToolTip($numMile, 'Milestone backs up the newest complete save and keeps the latest milestone restore points. Default: 5.')
+    $script:Tip.SetToolTip($chkZip, 'Zip mode stores each complete save group as one .zip. The .dds thumbnail is optional.')
 
     $btnReset.Add_Click({
         if ([System.Windows.Forms.MessageBox]::Show(

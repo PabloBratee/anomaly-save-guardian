@@ -705,6 +705,15 @@ try {
         Assert-True ($uiSource -notlike "*New-Label 'SAVE BACKUP'*") 'Old SAVE BACKUP header must not be used.'
     }
 
+    Invoke-Test 'UI explains rolling replacement, milestone selection, and grouped zip behavior' {
+        $uiSource = Get-Content -LiteralPath $uiPath -Raw
+
+        Assert-True ($uiSource -like '*Rolling backups replace the previous backup with the same save name*') 'UI should clearly explain rolling replacement by save name.'
+        Assert-True ($uiSource -like '*Milestone backs up the newest complete save*') 'UI should clearly explain milestone selection.'
+        Assert-True ($uiSource -like '*Zip mode stores each complete save group as one .zip*') 'UI should clearly explain grouped zip behavior.'
+        Assert-True ($uiSource -like '*.dds optional*') 'UI should make clear that .dds is optional.'
+    }
+
     Invoke-Test 'no-console VBS launcher exists and targets the UI relative to itself' {
         $vbsPath = Join-Path $repoRoot 'Start-Anomaly-Save-Guardian.vbs'
         Assert-True (Test-Path -LiteralPath $vbsPath) 'Start-Anomaly-Save-Guardian.vbs should exist.'

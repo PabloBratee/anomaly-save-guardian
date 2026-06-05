@@ -23,6 +23,9 @@ All notable changes to this project are documented here. This project follows
   one complete logical save group per `.zip`.
 - Milestone filenames now use minute precision (`yyyy-MM-dd_HH-mm`), with a
   shared `__002` collision suffix when needed.
+- UI copy now more clearly explains that rolling backups replace by save name,
+  milestones use the newest complete save, and zip mode stores one complete
+  save group per `.zip`.
 - Version, tag and release remain `v1.0.0`; the package remains
   `Anomaly-Save-Guardian-v1.0.0.zip`.
 
