@@ -26,6 +26,10 @@ All notable changes to this project are documented here. This project follows
 - UI copy now more clearly explains that rolling backups replace by save name,
   milestones use the newest complete save, and zip mode stores one complete
   save group per `.zip`.
+- **UI/UX polish:** the main window now shows the backup rules as three readable
+  pills (rolling / milestones / zip) instead of one long line that could clip,
+  and the Settings dialog has more breathing room with clearer, properly-spaced
+  helper text.
 - Version, tag and release remain `v1.0.0`; the package remains
   `Anomaly-Save-Guardian-v1.0.0.zip`.
 

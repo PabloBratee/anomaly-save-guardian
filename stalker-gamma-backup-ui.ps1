@@ -222,6 +222,24 @@ function New-Button {
     return $b
 }
 
+# A small "pill" label used for the backup-rule summary on the main window. Width
+# is fitted to its text in Set-Badge so several read cleanly on one row.
+function New-Badge {
+    param($X, $Y, $Back, $Fore)
+    $l = New-Object System.Windows.Forms.Label
+    $l.SetBounds($X, $Y, 10, 20)
+    $l.BackColor = $Back; $l.ForeColor = $Fore
+    $l.Font = $fSmall
+    $l.TextAlign = 'MiddleCenter'
+    $l.UseMnemonic = $false
+    return $l
+}
+function Set-Badge {
+    param($Label, [string]$Text)
+    $Label.Text  = $Text
+    $Label.Width = [System.Windows.Forms.TextRenderer]::MeasureText($Text, $Label.Font).Width + 18
+}
+
 # Shared tooltip provider (created early so Update-Info can attach path tooltips).
 $script:Tip = New-Object System.Windows.Forms.ToolTip
 $script:Tip.AutoPopDelay = 20000
@@ -292,8 +310,11 @@ $kBak   = New-Label 'Backups'  16 39 86 18 $cMuted $fBody
 $kRule  = New-Label 'Rules'    16 65 86 18 $cMuted $fBody
 $lblSaveVal = New-Label '' 104 13 548 18 $cText $fBody
 $lblBakVal  = New-Label '' 104 39 548 18 $cText $fBody
-$lblRuleVal = New-Label '' 104 65 548 18 $cText $fBody
-$cardInfo.Controls.AddRange(@($kSave, $kBak, $kRule, $lblSaveVal, $lblBakVal, $lblRuleVal))
+# Backup rules shown as three readable "pills" instead of one long line that clipped.
+$badgeRoll = New-Badge 104 63 $cCardHi $cAccent
+$badgeMile = New-Badge 104 63 $cCardHi $cBlue
+$badgeZip  = New-Badge 104 63 $cCardHi $cAmber
+$cardInfo.Controls.AddRange(@($kSave, $kBak, $kRule, $lblSaveVal, $lblBakVal, $badgeRoll, $badgeMile, $badgeZip))
 $form.Controls.Add($cardInfo)
 
 # --- Primary action ---
@@ -411,11 +432,25 @@ function Set-AppState {
 function Update-Info {
     Set-PathLabel $lblSaveVal $script:Config.saveFolderPath
     Set-PathLabel $lblBakVal  $script:Config.backupFolderPath
-    $exts = ($script:Config.includeExtensions -join '  ')
-    $zip  = if ($script:Config.enableZipBackup) { '   zip: one group' } else { '' }
+    $keepRoll = [int]$script:Config.keepMaxBackupsPerSave
     $mileKeep = if ($script:Config.PSObject.Properties.Name -contains 'keepMaxMilestones') { [int]$script:Config.keepMaxMilestones } else { 5 }
-    $lblRuleVal.Text = "$exts      -      rolling: replaces by name; milestone: newest complete (keep $mileKeep)$zip"
-    $script:Tip.SetToolTip($lblRuleVal, "File types backed up: $($script:Config.includeExtensions -join ' ')`r`nA restore point is a complete save group: .scop + .scoc, .dds optional.`r`nRolling backups replace the previous backup with the same save name. Milestone backs up the newest complete save and keeps the latest $mileKeep milestone restore points.`r`nZip mode stores each complete save group as one .zip when enabled.")
+    $zipText  = if ($script:Config.enableZipBackup) { 'Zip: one save group' } else { 'Zip: off' }
+
+    # Lay the rule pills out left to right, fitting each to its own text.
+    $x = 104
+    Set-Badge $badgeRoll ("Rolling: newest {0} per save" -f $keepRoll)
+    $badgeRoll.Location = New-Object System.Drawing.Point($x, 63); $x = $badgeRoll.Right + 8
+    Set-Badge $badgeMile ("Milestones: keep {0} newest" -f $mileKeep)
+    $badgeMile.Location = New-Object System.Drawing.Point($x, 63); $x = $badgeMile.Right + 8
+    Set-Badge $badgeZip $zipText
+    $badgeZip.Location  = New-Object System.Drawing.Point($x, 63)
+    $badgeZip.ForeColor = if ($script:Config.enableZipBackup) { $cAmber } else { $cFaint }
+
+    $rulesTip = "File types backed up: $($script:Config.includeExtensions -join ' ')`r`nA restore point is a complete save group: .scop + .scoc required, .dds optional.`r`nRolling keeps the newest $keepRoll backups per save name (older ones are replaced).`r`nMilestone backs up the newest complete save and keeps the latest $mileKeep restore points.`r`nZip mode stores each complete save group as one .zip when enabled."
+    $script:Tip.SetToolTip($badgeRoll, $rulesTip)
+    $script:Tip.SetToolTip($badgeMile, $rulesTip)
+    $script:Tip.SetToolTip($badgeZip,  $rulesTip)
+    $script:Tip.SetToolTip($kRule,     $rulesTip)
     $lblFootBy.Text = 'Created by'
     $lblFootName.Text = 'GAM33RSFR33AK'
     $script:Tip.SetToolTip($lblFootBy, $creatorCredit)
@@ -499,7 +534,7 @@ function Invoke-WithBackingUpState {
 function Show-SettingsDialog {
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text = 'Settings'
-    $dlg.ClientSize = New-Object System.Drawing.Size(580, 606)
+    $dlg.ClientSize = New-Object System.Drawing.Size(600, 664)
     $dlg.StartPosition = 'CenterParent'
     $dlg.FormBorderStyle = 'FixedDialog'
     $dlg.MaximizeBox = $false; $dlg.MinimizeBox = $false
@@ -508,24 +543,24 @@ function Show-SettingsDialog {
 
     function Add-Section {
         param($text, $y)
-        $dlg.Controls.Add((New-Label $text 18 $y 540 18 $cAccent $fBodyB))
-        $dlg.Controls.Add((New-Panel 18 ($y + 20) 544 1 $cLine))
+        $dlg.Controls.Add((New-Label $text 20 $y 560 18 $cAccent $fBodyB))
+        $dlg.Controls.Add((New-Panel 20 ($y + 20) 560 1 $cLine))
     }
     function Add-Field {
         param($label, $y, $value, $browse, $help)
-        $dlg.Controls.Add((New-Label $label 18 ($y + 4) 96 20 $cMuted $fBody))
+        $dlg.Controls.Add((New-Label $label 20 ($y + 4) 100 20 $cMuted $fBody))
         $tb = New-Object System.Windows.Forms.TextBox
-        $tb.SetBounds(118, $y, $(if ($browse) { 360 } else { 444 }), 24)
+        $tb.SetBounds(124, $y, $(if ($browse) { 374 } else { 456 }), 24)
         $tb.BackColor = $cCardHi; $tb.ForeColor = $cText; $tb.BorderStyle = 'FixedSingle'
         $tb.Text = [string]$value
         $dlg.Controls.Add($tb)
         if ($browse) {
-            $b = New-Button 'Browse' 488 ($y - 1) 74 26 $cCard $cText $fSmall
+            $b = New-Button 'Browse' 506 ($y - 1) 74 26 $cCard $cText $fSmall
             $b.Tag = $tb; $b.Add_Click($browse)
             $dlg.Controls.Add($b)
         }
         if ($help) {
-            $dlg.Controls.Add((New-Label $help 118 ($y + 26) 452 16 $cFaint $fSmall))
+            $dlg.Controls.Add((New-Label $help 124 ($y + 26) 456 16 $cFaint $fSmall))
         }
         return $tb
     }
@@ -548,57 +583,58 @@ function Show-SettingsDialog {
     }
 
     # --- FOLDERS ---
-    Add-Section 'FOLDERS' 14
-    $tbSave = Add-Field 'Save folder'      44  $script:Config.saveFolderPath      $pickFolder 'Your STALKER Anomaly / GAMMA "appdata\savedgames" folder (the source).'
-    $tbBak  = Add-Field 'Backup folder'    96  $script:Config.backupFolderPath    $pickFolder 'Where rolling backups are written. A second drive is recommended.'
-    $tbMile = Add-Field 'Milestone folder' 148 $script:Config.milestoneFolderPath $pickFolder 'Milestone backs up the newest complete save. Blank = a "Milestones" subfolder.'
+    Add-Section 'FOLDERS' 16
+    $tbSave = Add-Field 'Save folder'      50  $script:Config.saveFolderPath      $pickFolder 'Your STALKER Anomaly / GAMMA "appdata\savedgames" folder (the source).'
+    $tbBak  = Add-Field 'Backup folder'    100 $script:Config.backupFolderPath    $pickFolder 'Where rolling backups are written. A second drive is recommended.'
+    $tbMile = Add-Field 'Milestone folder' 150 $script:Config.milestoneFolderPath $pickFolder 'Milestone backs up the newest complete save. Blank = a "Milestones" subfolder.'
 
     # --- BACKUP BEHAVIOR ---
-    Add-Section 'BACKUP BEHAVIOR' 206
-    $tbExt = Add-Field 'File types' 236 ($script:Config.includeExtensions -join ' ') $null 'One save = .scop + .scoc, .dds optional. The group is backed up together.'
+    Add-Section 'BACKUP BEHAVIOR' 212
+    $tbExt = Add-Field 'File types' 246 ($script:Config.includeExtensions -join ' ') $null 'One save = .scop + .scoc required; .dds optional. The whole group is backed up together.'
 
-    $dlg.Controls.Add((New-Label 'Keep rolling' 18 292 96 20 $cMuted $fBody))
+    $dlg.Controls.Add((New-Label 'Keep rolling' 20 308 100 20 $cMuted $fBody))
     $numKeep = New-Object System.Windows.Forms.NumericUpDown
-    $numKeep.SetBounds(118, 288, 84, 24); $numKeep.Minimum = 1; $numKeep.Maximum = 100000
+    $numKeep.SetBounds(124, 304, 80, 24); $numKeep.Minimum = 1; $numKeep.Maximum = 100000
     $numKeep.BackColor = $cCardHi; $numKeep.ForeColor = $cText; $numKeep.BorderStyle = 'FixedSingle'
     $numKeep.Value = [Math]::Min(100000, [Math]::Max(1, [int]$script:Config.keepMaxBackupsPerSave))
 
-    $dlg.Controls.Add((New-Label 'Keep milestones' 232 292 110 20 $cMuted $fBody))
+    $dlg.Controls.Add((New-Label 'Keep milestones' 240 308 110 20 $cMuted $fBody))
     $numMile = New-Object System.Windows.Forms.NumericUpDown
-    $numMile.SetBounds(346, 288, 70, 24); $numMile.Minimum = 1; $numMile.Maximum = 100000
+    $numMile.SetBounds(356, 304, 80, 24); $numMile.Minimum = 1; $numMile.Maximum = 100000
     $numMile.BackColor = $cCardHi; $numMile.ForeColor = $cText; $numMile.BorderStyle = 'FixedSingle'
     $mileKeep = if ($script:Config.PSObject.Properties.Name -contains 'keepMaxMilestones') { [int]$script:Config.keepMaxMilestones } else { 5 }
     $numMile.Value = [Math]::Min(100000, [Math]::Max(1, $mileKeep))
-    $dlg.Controls.Add((New-Label 'Rolling replaces by save name. Milestones keep latest restore points. Default: 5.' 118 316 452 16 $cFaint $fSmall))
+    $dlg.Controls.Add((New-Label 'Rolling keeps newest per save name; milestones keep latest restore points. Default 5.' 124 334 456 16 $cFaint $fSmall))
 
-    $dlg.Controls.Add((New-Label 'Settle delay (sec)' 18 342 110 20 $cMuted $fBody))
+    $dlg.Controls.Add((New-Label 'Settle delay (sec)' 20 370 110 20 $cMuted $fBody))
     $numDelay = New-Object System.Windows.Forms.NumericUpDown
-    $numDelay.SetBounds(118, 338, 84, 24); $numDelay.Minimum = 0; $numDelay.Maximum = 120
+    $numDelay.SetBounds(124, 366, 80, 24); $numDelay.Minimum = 0; $numDelay.Maximum = 120
     $numDelay.BackColor = $cCardHi; $numDelay.ForeColor = $cText; $numDelay.BorderStyle = 'FixedSingle'
     $numDelay.Value = [Math]::Min(120, [Math]::Max(0, [int]$script:Config.backupDelaySeconds))
+    $dlg.Controls.Add((New-Label 'How long to wait after a save changes before copying it. 0 = copy right away.' 124 396 456 16 $cFaint $fSmall))
 
     $chkZip = New-Object System.Windows.Forms.CheckBox
     $chkZip.Text = 'Store each complete save group as one .zip'
-    $chkZip.SetBounds(116, 386, 320, 22)
+    $chkZip.SetBounds(122, 430, 360, 22)
     $chkZip.ForeColor = $cText; $chkZip.BackColor = [System.Drawing.Color]::Transparent
     $chkZip.Checked = [bool]$script:Config.enableZipBackup
     $dlg.Controls.Add($chkZip)
-    $dlg.Controls.Add((New-Label 'Zip mode stores each complete save group as one .zip. .dds optional.' 118 410 452 16 $cFaint $fSmall))
+    $dlg.Controls.Add((New-Label 'Zip mode stores each complete save group as one zip; .dds is optional.' 124 456 456 16 $cFaint $fSmall))
 
     # --- ADVANCED & LOGGING ---
-    Add-Section 'ADVANCED & LOGGING' 440
-    $tbLog = Add-Field 'Log file' 470 $script:Config.logFilePath $pickFile 'Where the text log is written. Handy if you ever need to see what happened.'
+    Add-Section 'ADVANCED & LOGGING' 492
+    $tbLog = Add-Field 'Log file' 526 $script:Config.logFilePath $pickFile 'Where the text log is written. Handy if you ever need to see what happened.'
 
     # --- Validation summary + buttons ---
-    $lblErr = New-Label '' 18 514 544 30 $cRed $fSmall
+    $lblErr = New-Label '' 20 580 560 28 $cRed $fSmall
     $dlg.Controls.Add($lblErr)
 
     $numKeep.TabIndex = 10; $numMile.TabIndex = 11; $numDelay.TabIndex = 12; $chkZip.TabIndex = 13
     $dlg.Controls.AddRange(@($numKeep, $numMile, $numDelay))
 
-    $btnReset  = New-Button 'Reset to defaults' 18  558 150 32 $cCard   $cMuted $fSmall
-    $btnSave   = New-Button 'Save'              320 558 116 32 $cAccent $cBlack
-    $btnCancel = New-Button 'Cancel'            446 558 116 32 $cCard   $cText
+    $btnReset  = New-Button 'Reset to defaults' 20  620 160 32 $cCard   $cMuted $fSmall
+    $btnSave   = New-Button 'Save'              340 620 116 32 $cAccent $cBlack
+    $btnCancel = New-Button 'Cancel'            464 620 116 32 $cCard   $cText
     $dlg.Controls.AddRange(@($btnReset, $btnSave, $btnCancel))
 
     $script:Tip.SetToolTip($btnReset, 'Reload the fields from the bundled example. Nothing is saved until you click Save.')
