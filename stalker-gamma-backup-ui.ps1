@@ -548,19 +548,23 @@ function Show-SettingsDialog {
     }
     function Add-Field {
         param($label, $y, $value, $browse, $help)
-        $dlg.Controls.Add((New-Label $label 20 ($y + 4) 100 20 $cMuted $fBody))
+        # Label is vertically centered against the field (MiddleLeft) and the field
+        # height is fixed (AutoSize off) with enough room that the text is not
+        # clipped at the top/bottom when Windows display scaling enlarges the font.
+        $dlg.Controls.Add((New-Label $label 20 $y 100 28 $cMuted $fBody 'MiddleLeft'))
         $tb = New-Object System.Windows.Forms.TextBox
-        $tb.SetBounds(124, $y, $(if ($browse) { 374 } else { 456 }), 24)
+        $tb.AutoSize = $false
+        $tb.SetBounds(124, $y, $(if ($browse) { 374 } else { 456 }), 28)
         $tb.BackColor = $cCardHi; $tb.ForeColor = $cText; $tb.BorderStyle = 'FixedSingle'
         $tb.Text = [string]$value
         $dlg.Controls.Add($tb)
         if ($browse) {
-            $b = New-Button 'Browse' 506 ($y - 1) 74 26 $cCard $cText $fSmall
+            $b = New-Button 'Browse' 506 ($y - 1) 74 28 $cCard $cText $fSmall
             $b.Tag = $tb; $b.Add_Click($browse)
             $dlg.Controls.Add($b)
         }
         if ($help) {
-            $dlg.Controls.Add((New-Label $help 124 ($y + 26) 456 16 $cFaint $fSmall))
+            $dlg.Controls.Add((New-Label $help 124 ($y + 30) 456 16 $cFaint $fSmall))
         }
         return $tb
     }
@@ -602,21 +606,24 @@ function Show-SettingsDialog {
         $t.BackColor = $cCardHi; $t.ForeColor = $cText; $t.BorderStyle = 'FixedSingle'
         $t.TextAlign = 'Center'; $t.MaxLength = 6
         $t.Text = [string]$Value
-        $t.SetBounds($X, $Y, $W, 24)
+        # AutoSize off + a fixed height with vertical breathing room so the digits
+        # are not clipped when Windows display scaling enlarges the font.
+        $t.AutoSize = $false
+        $t.SetBounds($X, $Y, $W, 28)
         $t.Add_KeyPress({ param($s, $e)
             if (-not [char]::IsControl($e.KeyChar) -and -not [char]::IsDigit($e.KeyChar)) { $e.Handled = $true } })
         return $t
     }
 
-    $dlg.Controls.Add((New-Label 'Keep rolling' 20 309 100 20 $cMuted $fBody))
+    $dlg.Controls.Add((New-Label 'Keep rolling' 20 305 100 28 $cMuted $fBody 'MiddleLeft'))
     $numKeep = New-NumBox 124 305 70 ([int]$script:Config.keepMaxBackupsPerSave)
 
-    $dlg.Controls.Add((New-Label 'Keep milestones' 246 309 110 20 $cMuted $fBody))
+    $dlg.Controls.Add((New-Label 'Keep milestones' 246 305 110 28 $cMuted $fBody 'MiddleLeft'))
     $mileKeep = if ($script:Config.PSObject.Properties.Name -contains 'keepMaxMilestones') { [int]$script:Config.keepMaxMilestones } else { 5 }
     $numMile = New-NumBox 360 305 70 $mileKeep
     $dlg.Controls.Add((New-Label 'Rolling replaces by save name; milestones keep latest restore points. Default: 5.' 124 336 456 16 $cFaint $fSmall))
 
-    $dlg.Controls.Add((New-Label 'Settle delay' 20 371 110 20 $cMuted $fBody))
+    $dlg.Controls.Add((New-Label 'Settle delay' 20 367 110 28 $cMuted $fBody 'MiddleLeft'))
     $numDelay = New-NumBox 124 367 70 ([int]$script:Config.backupDelaySeconds)
     $dlg.Controls.Add((New-Label 'How long to wait after a save changes before copying it, in seconds. 0 = copy right away.' 124 398 456 16 $cFaint $fSmall))
 
