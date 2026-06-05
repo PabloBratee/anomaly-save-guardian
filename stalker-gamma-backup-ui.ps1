@@ -616,9 +616,9 @@ function Show-SettingsDialog {
     $numMile = New-NumBox 360 305 70 $mileKeep
     $dlg.Controls.Add((New-Label 'Rolling replaces by save name; milestones keep latest restore points. Default: 5.' 124 336 456 16 $cFaint $fSmall))
 
-    $dlg.Controls.Add((New-Label 'Settle delay (sec)' 20 371 110 20 $cMuted $fBody))
+    $dlg.Controls.Add((New-Label 'Settle delay' 20 371 110 20 $cMuted $fBody))
     $numDelay = New-NumBox 124 367 70 ([int]$script:Config.backupDelaySeconds)
-    $dlg.Controls.Add((New-Label 'How long to wait after a save changes before copying it. 0 = copy right away.' 124 398 456 16 $cFaint $fSmall))
+    $dlg.Controls.Add((New-Label 'How long to wait after a save changes before copying it, in seconds. 0 = copy right away.' 124 398 456 16 $cFaint $fSmall))
 
     $chkZip = New-Object System.Windows.Forms.CheckBox
     $chkZip.Text = 'Store each complete save group as one .zip'
