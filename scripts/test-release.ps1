@@ -708,9 +708,13 @@ try {
     Invoke-Test 'UI explains rolling replacement, milestone selection, and grouped zip behavior' {
         $uiSource = Get-Content -LiteralPath $uiPath -Raw
 
+        Assert-True ($uiSource -like '*Rolling: newest per save name*') 'Main rules should show a short rolling badge that fits without clipping.'
+        Assert-True ($uiSource -like '*Milestones: newest complete, keep {0}*') 'Main rules should show a short milestone badge that explains newest-complete behavior.'
         Assert-True ($uiSource -like '*Rolling backups replace the previous backup with the same save name*') 'UI should clearly explain rolling replacement by save name.'
         Assert-True ($uiSource -like '*Milestone backs up the newest complete save*') 'UI should clearly explain milestone selection.'
         Assert-True ($uiSource -like '*Zip mode stores each complete save group as one .zip*') 'UI should clearly explain grouped zip behavior.'
+        Assert-True ($uiSource -like '*Zip mode stores each complete save group as one .zip; .dds is optional.*') 'Settings zip helper should use clear .zip wording.'
+        Assert-True ($uiSource -like '*Default: 5.*') 'Settings retention helper should use clear default punctuation.'
         Assert-True ($uiSource -like '*.dds optional*') 'UI should make clear that .dds is optional.'
     }
 

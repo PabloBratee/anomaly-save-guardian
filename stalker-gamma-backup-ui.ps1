@@ -438,9 +438,9 @@ function Update-Info {
 
     # Lay the rule pills out left to right, fitting each to its own text.
     $x = 104
-    Set-Badge $badgeRoll ("Rolling: newest {0} per save" -f $keepRoll)
+    Set-Badge $badgeRoll 'Rolling: newest per save name'
     $badgeRoll.Location = New-Object System.Drawing.Point($x, 63); $x = $badgeRoll.Right + 8
-    Set-Badge $badgeMile ("Milestones: keep {0} newest" -f $mileKeep)
+    Set-Badge $badgeMile ("Milestones: newest complete, keep {0}" -f $mileKeep)
     $badgeMile.Location = New-Object System.Drawing.Point($x, 63); $x = $badgeMile.Right + 8
     Set-Badge $badgeZip $zipText
     $badgeZip.Location  = New-Object System.Drawing.Point($x, 63)
@@ -592,26 +592,33 @@ function Show-SettingsDialog {
     Add-Section 'BACKUP BEHAVIOR' 212
     $tbExt = Add-Field 'File types' 246 ($script:Config.includeExtensions -join ' ') $null 'One save = .scop + .scoc required; .dds optional. The whole group is backed up together.'
 
-    $dlg.Controls.Add((New-Label 'Keep rolling' 20 308 100 20 $cMuted $fBody))
-    $numKeep = New-Object System.Windows.Forms.NumericUpDown
-    $numKeep.SetBounds(124, 304, 80, 24); $numKeep.Minimum = 1; $numKeep.Maximum = 100000
-    $numKeep.BackColor = $cCardHi; $numKeep.ForeColor = $cText; $numKeep.BorderStyle = 'FixedSingle'
-    $numKeep.Value = [Math]::Min(100000, [Math]::Max(1, [int]$script:Config.keepMaxBackupsPerSave))
+    # Small whole-number field. A plain TextBox (digit-only) is used instead of a
+    # NumericUpDown: the dark-themed NumericUpDown clipped its value against the
+    # border, while a TextBox renders cleanly like every other field. Values are
+    # parsed and range-clamped on Save.
+    function New-NumBox {
+        param($X, $Y, $W, $Value)
+        $t = New-Object System.Windows.Forms.TextBox
+        $t.BackColor = $cCardHi; $t.ForeColor = $cText; $t.BorderStyle = 'FixedSingle'
+        $t.TextAlign = 'Center'; $t.MaxLength = 6
+        $t.Text = [string]$Value
+        $t.SetBounds($X, $Y, $W, 24)
+        $t.Add_KeyPress({ param($s, $e)
+            if (-not [char]::IsControl($e.KeyChar) -and -not [char]::IsDigit($e.KeyChar)) { $e.Handled = $true } })
+        return $t
+    }
 
-    $dlg.Controls.Add((New-Label 'Keep milestones' 240 308 110 20 $cMuted $fBody))
-    $numMile = New-Object System.Windows.Forms.NumericUpDown
-    $numMile.SetBounds(356, 304, 80, 24); $numMile.Minimum = 1; $numMile.Maximum = 100000
-    $numMile.BackColor = $cCardHi; $numMile.ForeColor = $cText; $numMile.BorderStyle = 'FixedSingle'
+    $dlg.Controls.Add((New-Label 'Keep rolling' 20 309 100 20 $cMuted $fBody))
+    $numKeep = New-NumBox 124 305 70 ([int]$script:Config.keepMaxBackupsPerSave)
+
+    $dlg.Controls.Add((New-Label 'Keep milestones' 246 309 110 20 $cMuted $fBody))
     $mileKeep = if ($script:Config.PSObject.Properties.Name -contains 'keepMaxMilestones') { [int]$script:Config.keepMaxMilestones } else { 5 }
-    $numMile.Value = [Math]::Min(100000, [Math]::Max(1, $mileKeep))
-    $dlg.Controls.Add((New-Label 'Rolling keeps newest per save name; milestones keep latest restore points. Default 5.' 124 334 456 16 $cFaint $fSmall))
+    $numMile = New-NumBox 360 305 70 $mileKeep
+    $dlg.Controls.Add((New-Label 'Rolling replaces by save name; milestones keep latest restore points. Default: 5.' 124 336 456 16 $cFaint $fSmall))
 
-    $dlg.Controls.Add((New-Label 'Settle delay (sec)' 20 370 110 20 $cMuted $fBody))
-    $numDelay = New-Object System.Windows.Forms.NumericUpDown
-    $numDelay.SetBounds(124, 366, 80, 24); $numDelay.Minimum = 0; $numDelay.Maximum = 120
-    $numDelay.BackColor = $cCardHi; $numDelay.ForeColor = $cText; $numDelay.BorderStyle = 'FixedSingle'
-    $numDelay.Value = [Math]::Min(120, [Math]::Max(0, [int]$script:Config.backupDelaySeconds))
-    $dlg.Controls.Add((New-Label 'How long to wait after a save changes before copying it. 0 = copy right away.' 124 396 456 16 $cFaint $fSmall))
+    $dlg.Controls.Add((New-Label 'Settle delay (sec)' 20 371 110 20 $cMuted $fBody))
+    $numDelay = New-NumBox 124 367 70 ([int]$script:Config.backupDelaySeconds)
+    $dlg.Controls.Add((New-Label 'How long to wait after a save changes before copying it. 0 = copy right away.' 124 398 456 16 $cFaint $fSmall))
 
     $chkZip = New-Object System.Windows.Forms.CheckBox
     $chkZip.Text = 'Store each complete save group as one .zip'
@@ -619,7 +626,7 @@ function Show-SettingsDialog {
     $chkZip.ForeColor = $cText; $chkZip.BackColor = [System.Drawing.Color]::Transparent
     $chkZip.Checked = [bool]$script:Config.enableZipBackup
     $dlg.Controls.Add($chkZip)
-    $dlg.Controls.Add((New-Label 'Zip mode stores each complete save group as one zip; .dds is optional.' 124 456 456 16 $cFaint $fSmall))
+    $dlg.Controls.Add((New-Label 'Zip mode stores each complete save group as one .zip; .dds is optional.' 124 456 456 16 $cFaint $fSmall))
 
     # --- ADVANCED & LOGGING ---
     Add-Section 'ADVANCED & LOGGING' 492
@@ -651,9 +658,9 @@ function Show-SettingsDialog {
             $tbSave.Text = $ex.saveFolderPath; $tbBak.Text = $ex.backupFolderPath
             $tbMile.Text = $ex.milestoneFolderPath; $tbLog.Text = $ex.logFilePath
             $tbExt.Text  = ($ex.includeExtensions -join ' ')
-            $numKeep.Value  = [Math]::Min(100000, [Math]::Max(1, [int]$ex.keepMaxBackupsPerSave))
-            $numMile.Value  = [Math]::Min(100000, [Math]::Max(1, [int]$ex.keepMaxMilestones))
-            $numDelay.Value = [Math]::Min(120, [Math]::Max(0, [int]$ex.backupDelaySeconds))
+            $numKeep.Text  = [string][Math]::Min(100000, [Math]::Max(1, [int]$ex.keepMaxBackupsPerSave))
+            $numMile.Text  = [string][Math]::Min(100000, [Math]::Max(1, [int]$ex.keepMaxMilestones))
+            $numDelay.Text = [string][Math]::Min(120, [Math]::Max(0, [int]$ex.backupDelaySeconds))
             $chkZip.Checked = [bool]$ex.enableZipBackup
             $lblErr.ForeColor = $cMuted; $lblErr.Text = 'Fields reset to example defaults. Review them, then click Save.'
         }
@@ -685,6 +692,22 @@ function Show-SettingsDialog {
             return
         }
 
+        # Whole-number fields: parse, then range-clamp to safe values.
+        $keepVal = 0; $mileVal = 0; $delayVal = 0
+        if (-not [int]::TryParse($numKeep.Text.Trim(), [ref]$keepVal)) {
+            $lblErr.Text = 'Keep rolling must be a whole number (e.g. 5).'; return
+        }
+        if (-not [int]::TryParse($numMile.Text.Trim(), [ref]$mileVal)) {
+            $lblErr.Text = 'Keep milestones must be a whole number (e.g. 5).'; return
+        }
+        if (-not [int]::TryParse($numDelay.Text.Trim(), [ref]$delayVal)) {
+            $lblErr.Text = 'Settle delay must be a whole number of seconds (e.g. 3).'; return
+        }
+        $keepVal  = [Math]::Min(100000, [Math]::Max(1, $keepVal))
+        $mileVal  = [Math]::Min(100000, [Math]::Max(1, $mileVal))
+        $delayVal = [Math]::Min(120, [Math]::Max(0, $delayVal))
+        $numKeep.Text = [string]$keepVal; $numMile.Text = [string]$mileVal; $numDelay.Text = [string]$delayVal
+
         # Soft validation (warn, but allow - the drive may simply be offline now).
         $warnings = @()
         if (-not (Test-Path -LiteralPath $save -PathType Container)) {
@@ -709,9 +732,9 @@ function Show-SettingsDialog {
             backupFolderPath      = $bak
             milestoneFolderPath   = $mile
             includeExtensions     = $exts
-            backupDelaySeconds    = [double]$numDelay.Value
-            keepMaxBackupsPerSave = [int]$numKeep.Value
-            keepMaxMilestones     = [int]$numMile.Value
+            backupDelaySeconds    = [double]$delayVal
+            keepMaxBackupsPerSave = [int]$keepVal
+            keepMaxMilestones     = [int]$mileVal
             enableZipBackup       = [bool]$chkZip.Checked
             logFilePath           = $logp
         }
