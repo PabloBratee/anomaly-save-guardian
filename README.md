@@ -182,7 +182,7 @@ Use **Settings** in the app (recommended), or edit
   "backupFolderPath": "D:\\STALKER GAMMA Backups",
   "milestoneFolderPath": "D:\\STALKER GAMMA Backups\\Milestones",
   "includeExtensions": [".sav", ".scop", ".scoc", ".dds"],
-  "backupDelaySeconds": 3,
+  "backupDelaySeconds": 5,
   "keepMaxBackupsPerSave": 5,
   "keepMaxMilestones": 5,
   "enableZipBackup": false,
@@ -196,7 +196,7 @@ Use **Settings** in the app (recommended), or edit
 | `backupFolderPath` | Where rolling backups are written. |
 | `milestoneFolderPath` | Milestone restore points are written here. Optional; defaults to a `Milestones` subfolder of the backup folder. Milestone retention deletes old milestone restore points only inside this folder. |
 | `includeExtensions` | File types that make up a save. `.scop` + `.scoc` are a full save; `.dds` is the optional thumbnail. They are grouped by save name. |
-| `backupDelaySeconds` | Settle time after a change before copying, so a save's files are backed up together once they finish writing. |
+| `backupDelaySeconds` | Legacy key, kept for backward compatibility. The app now uses a fixed, built-in **5-second** settle delay (so a save's files finish writing before they are copied) and ignores any custom value here. Not editable in Settings. |
 | `keepMaxBackupsPerSave` | How many rolling logical-save restore points to keep across different save names. Rolling backups also replace the previous backup for the same save name. The key name is kept for backward compatibility. Default: `5`. |
 | `keepMaxMilestones` | How many milestone restore points to keep in the milestone folder. Default: `5`. Existing configs without this key keep working and use `5`. |
 | `enableZipBackup` | `true` = store each complete logical save group as one `.zip`; `false` = plain copy (easiest to restore). |

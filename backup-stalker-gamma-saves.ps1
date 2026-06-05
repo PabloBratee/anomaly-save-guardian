@@ -149,7 +149,7 @@ function Import-BackupConfig {
     # --- Validate required keys exist ---
     $required = @(
         'saveFolderPath', 'backupFolderPath', 'includeExtensions',
-        'backupDelaySeconds', 'keepMaxBackupsPerSave', 'enableZipBackup', 'logFilePath'
+        'keepMaxBackupsPerSave', 'enableZipBackup', 'logFilePath'
     )
     $present = @($cfg.PSObject.Properties.Name)
     foreach ($key in $required) {
@@ -172,10 +172,12 @@ function Import-BackupConfig {
         throw "Config 'includeExtensions' must be a non-empty array, e.g. ['.sav', '.scop']."
     }
 
-    $delay = 0.0
-    if (-not [double]::TryParse([string]$cfg.backupDelaySeconds, [ref]$delay) -or $delay -lt 0) {
-        throw "Config 'backupDelaySeconds' must be a number >= 0."
-    }
+    # The settle/debounce delay is a fixed, built-in 5 seconds: long enough for a
+    # save's files to finish writing before they are copied, short enough to feel
+    # instant. Older configs may still carry a 'backupDelaySeconds' key; it is
+    # accepted for backward compatibility but ignored so behavior is always the
+    # built-in 5-second settle delay.
+    $delay = 5
 
     $keep = 0
     if (-not [int]::TryParse([string]$cfg.keepMaxBackupsPerSave, [ref]$keep) -or $keep -lt 1) {
@@ -218,7 +220,6 @@ function Import-BackupConfig {
         ([string]$cfg.backupFolderPath -ieq 'D:\STALKER GAMMA Backups') -and
         ([string]$milestone -ieq 'D:\STALKER GAMMA Backups\Milestones') -and
         ((@($normExt) -join '|') -eq '.sav|.scop|.scoc|.dds') -and
-        $delay -eq 3 -and
         ([bool]$cfg.enableZipBackup) -eq $false -and
         ([string]$cfg.logFilePath -ieq 'D:\STALKER GAMMA Backups\backup-log.txt')
     if ($looksLikeOldUntouchedDefault) {
@@ -258,7 +259,9 @@ function Save-BackupConfig {
         backupFolderPath      = [string]$Config.backupFolderPath
         milestoneFolderPath   = [string]$Config.milestoneFolderPath
         includeExtensions     = @($Config.includeExtensions)
-        backupDelaySeconds    = $Config.backupDelaySeconds
+        # Settle delay is a fixed, built-in 5 seconds and is no longer user-editable.
+        # The key is still written so older readers stay happy.
+        backupDelaySeconds    = 5
         keepMaxBackupsPerSave = [int]$Config.keepMaxBackupsPerSave
         keepMaxMilestones     = $keepMilestones
         enableZipBackup       = [bool]$Config.enableZipBackup

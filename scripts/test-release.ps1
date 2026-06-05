@@ -718,6 +718,57 @@ try {
         Assert-True ($uiSource -like '*.dds optional*') 'UI should make clear that .dds is optional.'
     }
 
+    Invoke-Test 'Settings dialog no longer exposes the settle delay option' {
+        $uiSource = Get-Content -LiteralPath $uiPath -Raw
+
+        Assert-True ($uiSource -notlike "*New-Label 'Settle delay'*") 'Settings dialog must not show a Settle delay label.'
+        Assert-True ($uiSource -notlike '*Settle delay (sec)*') 'Settings dialog must not show a Settle delay seconds input.'
+        Assert-True ($uiSource -notlike '*How long to wait after a save changes before copying it*') 'Settings dialog must not show settle delay helper text.'
+        Assert-True ($uiSource -notlike '*$numDelay*') 'Settings dialog must not keep a settle delay input control.'
+    }
+
+    Invoke-Test 'settle delay is a fixed 5 seconds and old configs still load safely' {
+        $root = New-TestRoot
+        $config = Join-Path $root 'stalker-gamma-backup-config.json'
+
+        # Old config carrying a custom settle delay must load and be normalized to 5.
+        Set-Content -LiteralPath $config -Encoding ASCII -Value @'
+{
+  "saveFolderPath": "C:\\Anomaly\\appdata\\savedgames",
+  "backupFolderPath": "E:\\My Custom Backups",
+  "milestoneFolderPath": "E:\\My Custom Backups\\Milestones",
+  "includeExtensions": [".sav", ".scop", ".scoc", ".dds"],
+  "backupDelaySeconds": 42,
+  "keepMaxBackupsPerSave": 5,
+  "enableZipBackup": false,
+  "logFilePath": "E:\\My Custom Backups\\backup-log.txt"
+}
+'@
+        $cfg = Import-BackupConfig -ConfigPath $config
+        Assert-Equal 5 $cfg.backupDelaySeconds 'A custom settle delay in an old config should be normalized to the fixed 5 seconds.'
+
+        # A config missing the key entirely must still load and default to 5.
+        $config2 = Join-Path $root 'stalker-gamma-backup-config-no-delay.json'
+        Set-Content -LiteralPath $config2 -Encoding ASCII -Value @'
+{
+  "saveFolderPath": "C:\\Anomaly\\appdata\\savedgames",
+  "backupFolderPath": "E:\\My Custom Backups",
+  "milestoneFolderPath": "E:\\My Custom Backups\\Milestones",
+  "includeExtensions": [".sav", ".scop", ".scoc", ".dds"],
+  "keepMaxBackupsPerSave": 5,
+  "enableZipBackup": false,
+  "logFilePath": "E:\\My Custom Backups\\backup-log.txt"
+}
+'@
+        $cfg2 = Import-BackupConfig -ConfigPath $config2
+        Assert-Equal 5 $cfg2.backupDelaySeconds 'A config without a settle delay key should default to the fixed 5 seconds.'
+
+        # The bundled example config carries the fixed 5-second value.
+        $exampleConfigPath = Join-Path $repoRoot 'stalker-gamma-backup-config.example.json'
+        $exCfg = Import-BackupConfig -ConfigPath $exampleConfigPath
+        Assert-Equal 5 $exCfg.backupDelaySeconds 'Example config should use the fixed 5-second settle delay.'
+    }
+
     Invoke-Test 'no-console VBS launcher exists and targets the UI relative to itself' {
         $vbsPath = Join-Path $repoRoot 'Start-Anomaly-Save-Guardian.vbs'
         Assert-True (Test-Path -LiteralPath $vbsPath) 'Start-Anomaly-Save-Guardian.vbs should exist.'

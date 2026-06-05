@@ -30,6 +30,11 @@ All notable changes to this project are documented here. This project follows
   pills (rolling / milestones / zip) instead of one long line that could clip,
   and the Settings dialog has more breathing room with clearer, properly-spaced
   helper text.
+- **Removed the confusing Settle delay setting** from the Settings dialog. The
+  app now uses a fixed, built-in **5-second** settle delay so a save's files
+  finish writing before they are copied. Older configs that still contain a
+  `backupDelaySeconds` value keep loading; the value is ignored and normalized to
+  5 seconds.
 - Version, tag and release remain `v1.0.0`; the package remains
   `Anomaly-Save-Guardian-v1.0.0.zip`.
 
@@ -76,7 +81,7 @@ your existing `stalker-gamma-backup-config.json` keeps working.
 - **App icon** (`anomaly-save-guardian.ico`): a protective shield with a circular
   restore arrow, used by the window, tray and desktop shortcut.
 - **Settings dialog** to change save / backup / milestone / log folders,
-  extensions, retention, delay and zip mode without editing JSON.
+  extensions, retention and zip mode without editing JSON.
 - **System tray** support: minimise or close (X) to tray, double-click to
   restore, right-click menu, and a true Exit.
 - **Milestone snapshots** for manually saving a restore point before risky

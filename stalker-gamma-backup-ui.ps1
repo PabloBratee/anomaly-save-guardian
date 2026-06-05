@@ -534,7 +534,7 @@ function Invoke-WithBackingUpState {
 function Show-SettingsDialog {
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text = 'Settings'
-    $dlg.ClientSize = New-Object System.Drawing.Size(600, 664)
+    $dlg.ClientSize = New-Object System.Drawing.Size(600, 601)
     $dlg.StartPosition = 'CenterParent'
     $dlg.FormBorderStyle = 'FixedDialog'
     $dlg.MaximizeBox = $false; $dlg.MinimizeBox = $false
@@ -623,32 +623,28 @@ function Show-SettingsDialog {
     $numMile = New-NumBox 360 305 70 $mileKeep
     $dlg.Controls.Add((New-Label 'Rolling replaces by save name; milestones keep latest restore points. Default: 5.' 124 336 456 16 $cFaint $fSmall))
 
-    $dlg.Controls.Add((New-Label 'Settle delay' 20 367 110 28 $cMuted $fBody 'MiddleLeft'))
-    $numDelay = New-NumBox 124 367 70 ([int]$script:Config.backupDelaySeconds)
-    $dlg.Controls.Add((New-Label 'How long to wait after a save changes before copying it, in seconds. 0 = copy right away.' 124 398 456 16 $cFaint $fSmall))
-
     $chkZip = New-Object System.Windows.Forms.CheckBox
     $chkZip.Text = 'Store each complete save group as one .zip'
-    $chkZip.SetBounds(122, 430, 360, 22)
+    $chkZip.SetBounds(122, 367, 360, 22)
     $chkZip.ForeColor = $cText; $chkZip.BackColor = [System.Drawing.Color]::Transparent
     $chkZip.Checked = [bool]$script:Config.enableZipBackup
     $dlg.Controls.Add($chkZip)
-    $dlg.Controls.Add((New-Label 'Zip mode stores each complete save group as one .zip; .dds is optional.' 124 456 456 16 $cFaint $fSmall))
+    $dlg.Controls.Add((New-Label 'Zip mode stores each complete save group as one .zip; .dds is optional.' 124 393 456 16 $cFaint $fSmall))
 
     # --- ADVANCED & LOGGING ---
-    Add-Section 'ADVANCED & LOGGING' 492
-    $tbLog = Add-Field 'Log file' 526 $script:Config.logFilePath $pickFile 'Where the text log is written. Handy if you ever need to see what happened.'
+    Add-Section 'ADVANCED & LOGGING' 429
+    $tbLog = Add-Field 'Log file' 463 $script:Config.logFilePath $pickFile 'Where the text log is written. Handy if you ever need to see what happened.'
 
     # --- Validation summary + buttons ---
-    $lblErr = New-Label '' 20 580 560 28 $cRed $fSmall
+    $lblErr = New-Label '' 20 517 560 28 $cRed $fSmall
     $dlg.Controls.Add($lblErr)
 
-    $numKeep.TabIndex = 10; $numMile.TabIndex = 11; $numDelay.TabIndex = 12; $chkZip.TabIndex = 13
-    $dlg.Controls.AddRange(@($numKeep, $numMile, $numDelay))
+    $numKeep.TabIndex = 10; $numMile.TabIndex = 11; $chkZip.TabIndex = 12
+    $dlg.Controls.AddRange(@($numKeep, $numMile))
 
-    $btnReset  = New-Button 'Reset to defaults' 20  620 160 32 $cCard   $cMuted $fSmall
-    $btnSave   = New-Button 'Save'              340 620 116 32 $cAccent $cBlack
-    $btnCancel = New-Button 'Cancel'            464 620 116 32 $cCard   $cText
+    $btnReset  = New-Button 'Reset to defaults' 20  557 160 32 $cCard   $cMuted $fSmall
+    $btnSave   = New-Button 'Save'              340 557 116 32 $cAccent $cBlack
+    $btnCancel = New-Button 'Cancel'            464 557 116 32 $cCard   $cText
     $dlg.Controls.AddRange(@($btnReset, $btnSave, $btnCancel))
 
     $script:Tip.SetToolTip($btnReset, 'Reload the fields from the bundled example. Nothing is saved until you click Save.')
@@ -667,7 +663,6 @@ function Show-SettingsDialog {
             $tbExt.Text  = ($ex.includeExtensions -join ' ')
             $numKeep.Text  = [string][Math]::Min(100000, [Math]::Max(1, [int]$ex.keepMaxBackupsPerSave))
             $numMile.Text  = [string][Math]::Min(100000, [Math]::Max(1, [int]$ex.keepMaxMilestones))
-            $numDelay.Text = [string][Math]::Min(120, [Math]::Max(0, [int]$ex.backupDelaySeconds))
             $chkZip.Checked = [bool]$ex.enableZipBackup
             $lblErr.ForeColor = $cMuted; $lblErr.Text = 'Fields reset to example defaults. Review them, then click Save.'
         }
@@ -700,20 +695,16 @@ function Show-SettingsDialog {
         }
 
         # Whole-number fields: parse, then range-clamp to safe values.
-        $keepVal = 0; $mileVal = 0; $delayVal = 0
+        $keepVal = 0; $mileVal = 0
         if (-not [int]::TryParse($numKeep.Text.Trim(), [ref]$keepVal)) {
             $lblErr.Text = 'Keep rolling must be a whole number (e.g. 5).'; return
         }
         if (-not [int]::TryParse($numMile.Text.Trim(), [ref]$mileVal)) {
             $lblErr.Text = 'Keep milestones must be a whole number (e.g. 5).'; return
         }
-        if (-not [int]::TryParse($numDelay.Text.Trim(), [ref]$delayVal)) {
-            $lblErr.Text = 'Settle delay must be a whole number of seconds (e.g. 3).'; return
-        }
         $keepVal  = [Math]::Min(100000, [Math]::Max(1, $keepVal))
         $mileVal  = [Math]::Min(100000, [Math]::Max(1, $mileVal))
-        $delayVal = [Math]::Min(120, [Math]::Max(0, $delayVal))
-        $numKeep.Text = [string]$keepVal; $numMile.Text = [string]$mileVal; $numDelay.Text = [string]$delayVal
+        $numKeep.Text = [string]$keepVal; $numMile.Text = [string]$mileVal
 
         # Soft validation (warn, but allow - the drive may simply be offline now).
         $warnings = @()
@@ -739,7 +730,7 @@ function Show-SettingsDialog {
             backupFolderPath      = $bak
             milestoneFolderPath   = $mile
             includeExtensions     = $exts
-            backupDelaySeconds    = [double]$delayVal
+            backupDelaySeconds    = 5   # fixed, built-in settle delay (no longer user-editable)
             keepMaxBackupsPerSave = [int]$keepVal
             keepMaxMilestones     = [int]$mileVal
             enableZipBackup       = [bool]$chkZip.Checked
